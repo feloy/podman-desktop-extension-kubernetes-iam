@@ -1,0 +1,49 @@
+/**********************************************************************
+ * Copyright (C) 2026 Red Hat, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ ***********************************************************************/
+
+import { ContainerModule } from 'inversify';
+
+import { States } from './states';
+import { StateObject } from './util/state-object.svelte';
+import { IDisposable } from '@kubernetes-iam/channels';
+import { StateRolesData } from './roles.svelte';
+import { StateRoleBindingsData } from '/@/state/role-bindings.svelte';
+import { StateClusterRolesData } from '/@/state/cluster-roles.svelte';
+import { StateClusterRoleBindingsData } from '/@/state/cluster-role-bindings.svelte';
+
+const statesModule = new ContainerModule(options => {
+  options.bind(States).toSelf().inSingletonScope();
+
+  options.bind(StateRolesData).toSelf().inSingletonScope();
+  options.bind(StateObject).toService(StateRolesData);
+  options.bind(IDisposable).toService(StateRolesData);
+
+  options.bind(StateRoleBindingsData).toSelf().inSingletonScope();
+  options.bind(StateObject).toService(StateRoleBindingsData);
+  options.bind(IDisposable).toService(StateRoleBindingsData);
+
+  options.bind(StateClusterRolesData).toSelf().inSingletonScope();
+  options.bind(StateObject).toService(StateClusterRolesData);
+  options.bind(IDisposable).toService(StateClusterRolesData);
+
+  options.bind(StateClusterRoleBindingsData).toSelf().inSingletonScope();
+  options.bind(StateObject).toService(StateClusterRoleBindingsData);
+  options.bind(IDisposable).toService(StateClusterRoleBindingsData);
+});
+
+export { statesModule };

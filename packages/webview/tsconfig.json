@@ -1,0 +1,31 @@
+{
+  "extends": "@tsconfig/svelte/tsconfig.json",
+  "compilerOptions": {
+    "target": "esnext",
+    "module": "esnext",
+    "strict": true,
+    "strictPropertyInitialization": false,
+    "resolveJsonModule": true,
+    "preserveValueImports": false,
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    "baseUrl": ".",
+    "paths": {
+      "/@/*": ["./src/*"],
+    },
+    "allowJs": true,
+    "checkJs": true,
+    "types": ["vite/client"]
+  },
+  "include": [
+    "src/**/*.d.ts",
+    "src/**/*.ts",
+    "src/**/*.js",
+    "src/**/*.svelte",
+    "types/*.d.ts",
+    "../../types/*.d.ts"],
+  "exclude": [
+      "node_modules",
+      "dist"
+    ]
+}
