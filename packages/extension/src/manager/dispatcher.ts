@@ -1,0 +1,77 @@
+/**********************************************************************
+ * Copyright (C) 2026 Red Hat, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ ***********************************************************************/
+
+import { RpcChannel } from '@kubernetes-iam/rpc';
+import { inject, injectable, multiInject } from 'inversify';
+import { DispatcherObject } from '/@/dispatcher/util/dispatcher-object';
+import { ChannelSubscriber } from '/@/manager/channel-subscriber';
+import { ROLES, ROLE_BINDINGS, CLUSTER_ROLES, CLUSTER_ROLE_BINDINGS } from '@kubernetes-iam/channels';
+import { DashboardStatesManager } from '/@/manager/dashboard-states-manager';
+
+@injectable()
+export class Dispatcher {
+  @inject(DashboardStatesManager)
+  private dashboardStatesManager: DashboardStatesManager;
+
+  #dispatchers: Map<string, DispatcherObject<unknown>> = new Map();
+  #channelSubscriber: ChannelSubscriber;
+
+  constructor(
+    @multiInject(DispatcherObject) dispatchers: DispatcherObject<unknown>[],
+    @inject(ChannelSubscriber) channelSubscriber: ChannelSubscriber,
+  ) {
+    this.#channelSubscriber = channelSubscriber;
+    dispatchers.forEach(dispatcher => {
+      this.#dispatchers.set(dispatcher.channelName, dispatcher);
+    });
+  }
+
+  init(): void {
+    this.dashboardStatesManager.onRolesChange(async () => {
+      await this.dispatch(ROLES);
+    });
+    this.dashboardStatesManager.onRoleBindingsChange(async () => {
+      await this.dispatch(ROLE_BINDINGS);
+    });
+    this.dashboardStatesManager.onClusterRolesChange(async () => {
+      await this.dispatch(CLUSTER_ROLES);
+    });
+    this.dashboardStatesManager.onClusterRoleBindingsChange(async () => {
+      await this.dispatch(CLUSTER_ROLE_BINDINGS);
+    });
+    this.#channelSubscriber.onSubscribe(async channelName => await this.dispatchByChannelName(channelName));
+  }
+
+  async dispatch(channel: RpcChannel<unknown>): Promise<void> {
+    return this.dispatchByChannelName(channel.name);
+  }
+
+  async dispatchByChannelName(channelName: string): Promise<void> {
+    if (!this.#channelSubscriber.hasSubscribers(channelName)) {
+      return;
+    }
+    const subscriptions = this.#channelSubscriber.getSubscriptions(channelName);
+
+    const dispatcher = this.#dispatchers.get(channelName);
+    if (!dispatcher) {
+      console.error(`dispatcher not found for channel ${channelName}`);
+      return;
+    }
+    await dispatcher.dispatch(subscriptions);
+  }
+}
