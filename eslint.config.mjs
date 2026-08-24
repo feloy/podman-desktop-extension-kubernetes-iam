@@ -61,6 +61,7 @@ export default [
       '**/.svelte-kit/',
       'scripts/**',
       '**/src-generated/',
+      'types/**',
 
     ],
   },
