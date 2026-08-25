@@ -1,12 +1,14 @@
 # Kubernetes IAM Extension for Podman Desktop
 
-A Podman Desktop extension for managing Kubernetes RBAC resources (Roles, RoleBindings, ClusterRoles, ClusterRoleBindings) across contexts.
+A Podman Desktop extension for managing Kubernetes cluster users and their role assignments.
+
+Users are not managed directly by the cluster, but they are referenced in RoleBinding and ClusterRoleBinding resources. This extension extracts user information from these bindings and provides a convenient interface to manage role assignments.
 
 ## Features
 
-- View and manage Kubernetes Roles and ClusterRoles
-- View and manage RoleBindings and ClusterRoleBindings
-- Create, edit, and delete RBAC resources through a user-friendly interface
+- List all users referenced in RoleBindings and ClusterRoleBindings across the cluster
+- Click on a user to view and manage their Roles and ClusterRoles assignments
+- Build kubeconfig files for users
 - Multi-context support
 
 ## Installation
