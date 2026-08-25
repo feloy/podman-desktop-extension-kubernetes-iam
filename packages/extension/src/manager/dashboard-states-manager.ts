@@ -21,7 +21,20 @@ import type { KubernetesDashboardSubscriber } from '@podman-desktop/kubernetes-d
 import { inject, injectable } from 'inversify';
 import { Emitter, Event } from '/@/types/emitter';
 import { DashboardApiManager } from '/@/manager/dashboard-api-manager';
-import type { RolesData, RoleBindingsData, ClusterRolesData, ClusterRoleBindingsData } from '@kubernetes-iam/channels';
+import type {
+  RolesData,
+  RoleBindingsData,
+  ClusterRolesData,
+  ClusterRoleBindingsData,
+  UsersData,
+} from '@kubernetes-iam/channels';
+import {
+  toRoleInfo,
+  toClusterRoleInfo,
+  toRoleBindingInfo,
+  toClusterRoleBindingInfo,
+  extractUniqueUsers,
+} from '/@/manager/resource-transformers';
 
 @injectable()
 export class DashboardStatesManager implements Disposable {
@@ -37,6 +50,9 @@ export class DashboardStatesManager implements Disposable {
   #onClusterRoleBindingsChange = new Emitter<void>();
   onClusterRoleBindingsChange: Event<void> = this.#onClusterRoleBindingsChange.event;
 
+  #onUsersChange = new Emitter<void>();
+  onUsersChange: Event<void> = this.#onUsersChange.event;
+
   #subscriptions: Disposable[] = [];
   #subscriber: KubernetesDashboardSubscriber | undefined;
 
@@ -44,6 +60,7 @@ export class DashboardStatesManager implements Disposable {
   #roleBindings: RoleBindingsData = { roleBindings: [] };
   #clusterRoles: ClusterRolesData = { clusterRoles: [] };
   #clusterRoleBindings: ClusterRoleBindingsData = { clusterRoleBindings: [] };
+  #users: UsersData = { users: [] };
 
   @inject(DashboardApiManager)
   protected dashboardApiManager: DashboardApiManager;
@@ -56,7 +73,43 @@ export class DashboardStatesManager implements Disposable {
         this.#subscriptions.push(this.#subscriber);
         didChangeSubscription.dispose();
 
-        // RBAC event subscriptions will be added here once the Dashboard API supports them
+        this.#subscriptions.push(
+          this.#subscriber.onResourceUpdate({ resourceName: 'roles' }, event => {
+            this.setRoles({
+              roles: event.resources.flatMap(r => r.items.map(item => toRoleInfo(item, r.contextName ?? ''))),
+            });
+          }),
+        );
+        this.#subscriptions.push(
+          this.#subscriber.onResourceUpdate({ resourceName: 'clusterroles' }, event => {
+            this.setClusterRoles({
+              clusterRoles: event.resources.flatMap(r =>
+                r.items.map(item => toClusterRoleInfo(item, r.contextName ?? '')),
+              ),
+            });
+          }),
+        );
+        this.#subscriptions.push(
+          this.#subscriber.onResourceUpdate({ resourceName: 'rolebindings' }, event => {
+            this.setRoleBindings({
+              roleBindings: event.resources.flatMap(r =>
+                r.items.map(item => toRoleBindingInfo(item, r.contextName ?? '')),
+              ),
+            });
+          }),
+        );
+        this.#subscriptions.push(
+          this.#subscriber.onResourceUpdate({ resourceName: 'clusterrolebindings' }, event => {
+            this.setClusterRoleBindings({
+              clusterRoleBindings: event.resources.flatMap(r =>
+                r.items.map(item => toClusterRoleBindingInfo(item, r.contextName ?? '')),
+              ),
+            });
+          }),
+        );
+
+        this.onRoleBindingsChange(() => this.#recomputeUsers());
+        this.onClusterRoleBindingsChange(() => this.#recomputeUsers());
       }
     });
     this.#subscriptions.push(didChangeSubscription);
@@ -107,5 +160,18 @@ export class DashboardStatesManager implements Disposable {
   setClusterRoleBindings(clusterRoleBindings: ClusterRoleBindingsData): void {
     this.#clusterRoleBindings = clusterRoleBindings;
     this.#onClusterRoleBindingsChange.fire();
+  }
+
+  getUsers(): UsersData {
+    return this.#users;
+  }
+
+  setUsers(users: UsersData): void {
+    this.#users = users;
+    this.#onUsersChange.fire();
+  }
+
+  #recomputeUsers(): void {
+    this.setUsers({ users: extractUniqueUsers(this.#roleBindings, this.#clusterRoleBindings) });
   }
 }

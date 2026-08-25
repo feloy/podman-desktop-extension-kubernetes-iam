@@ -16,8 +16,13 @@
  * SPDX-License-Identifier: Apache-2.0
  ***********************************************************************/
 
-export * from './role-info';
-export * from './role-binding-info';
-export * from './cluster-role-info';
-export * from './cluster-role-binding-info';
-export * from './user-info';
+export interface UserInfo {
+  kind: string;
+  name: string;
+  namespace?: string;
+  apiGroup?: string;
+}
+
+export interface UsersData {
+  users: UserInfo[];
+}

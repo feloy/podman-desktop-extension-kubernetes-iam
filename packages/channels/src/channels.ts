@@ -23,6 +23,7 @@ import type { RolesData } from '/@/model/role-info';
 import type { RoleBindingsData } from '/@/model/role-binding-info';
 import type { ClusterRolesData } from '/@/model/cluster-role-info';
 import type { ClusterRoleBindingsData } from '/@/model/cluster-role-binding-info';
+import type { UsersData } from '/@/model/user-info';
 
 // RPC channels (used by the webview to send requests to the extension)
 export const API_IAM = createRpcChannel<IamApi>('IamApi');
@@ -33,3 +34,4 @@ export const ROLES = createRpcChannel<RolesData>('Roles');
 export const ROLE_BINDINGS = createRpcChannel<RoleBindingsData>('RoleBindings');
 export const CLUSTER_ROLES = createRpcChannel<ClusterRolesData>('ClusterRoles');
 export const CLUSTER_ROLE_BINDINGS = createRpcChannel<ClusterRoleBindingsData>('ClusterRoleBindings');
+export const USERS = createRpcChannel<UsersData>('Users');

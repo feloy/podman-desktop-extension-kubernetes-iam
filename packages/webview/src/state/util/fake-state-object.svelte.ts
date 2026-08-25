@@ -16,8 +16,23 @@
  * SPDX-License-Identifier: Apache-2.0
  ***********************************************************************/
 
-export * from './role-info';
-export * from './role-binding-info';
-export * from './cluster-role-info';
-export * from './cluster-role-binding-info';
-export * from './user-info';
+import type { StateObject } from './state-object.svelte';
+import { vi } from 'vitest';
+
+export class FakeStateObject<T, U> implements StateObject<T, U> {
+  #data = $state<{ value: T | undefined }>({ value: undefined });
+
+  subscribe = vi.fn().mockReturnValue((): void => {});
+
+  get data(): T | undefined {
+    return this.#data.value;
+  }
+
+  dispose(): void {}
+
+  async init(): Promise<void> {}
+
+  setData(value: T): void {
+    this.#data.value = value;
+  }
+}

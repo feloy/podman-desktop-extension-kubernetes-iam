@@ -16,8 +16,20 @@
  * SPDX-License-Identifier: Apache-2.0
  ***********************************************************************/
 
-export * from './role-info';
-export * from './role-binding-info';
-export * from './cluster-role-info';
-export * from './cluster-role-binding-info';
-export * from './user-info';
+import { inject, injectable } from 'inversify';
+
+import { USERS, type UsersData } from '@kubernetes-iam/channels';
+import { RpcBrowser } from '@kubernetes-iam/rpc';
+
+import { AbsStateObjectImpl, type StateObject } from './util/state-object.svelte';
+
+@injectable()
+export class StateUsersData extends AbsStateObjectImpl<UsersData, void> implements StateObject<UsersData, void> {
+  constructor(@inject(RpcBrowser) rpcBrowser: RpcBrowser) {
+    super(rpcBrowser);
+  }
+
+  async init(): Promise<void> {
+    await this.initChannel(USERS);
+  }
+}
