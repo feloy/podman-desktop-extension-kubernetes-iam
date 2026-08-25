@@ -30,7 +30,7 @@
     "@kubernetes-iam/channels": "workspace:*",
     "@podman-desktop/api": "1.29.1",
     "@podman-desktop/kubernetes-dashboard-extension-api": "0.5.0",
-    "@types/node": "^24",
+    "@types/node": "^26",
     "@typescript-eslint/eslint-plugin": "^8.67.0",
     "@typescript-eslint/parser": "^8.67.0",
     "@vitest/coverage-v8": "^4.1.11",
