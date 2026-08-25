@@ -78,9 +78,6 @@ jobs:
         run: pnpm build
         timeout-minutes: 40
 
-  ## the builder image is not built as part of this workflow
-  ## but is built in the release workflow
-  ## Changes to the builder image must be merged before to use these changes in the extension image
   extension-image:
     name: Build extension OCI image
     runs-on: ubuntu-24.04
