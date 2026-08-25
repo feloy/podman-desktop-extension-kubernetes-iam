@@ -21,6 +21,7 @@ import { StateRolesData } from './roles.svelte';
 import { StateRoleBindingsData } from '/@/state/role-bindings.svelte';
 import { StateClusterRolesData } from '/@/state/cluster-roles.svelte';
 import { StateClusterRoleBindingsData } from '/@/state/cluster-role-bindings.svelte';
+import { StateUsersData } from '/@/state/users.svelte';
 
 @injectable()
 export class States {
@@ -50,5 +51,12 @@ export class States {
 
   get stateClusterRoleBindingsData(): StateClusterRoleBindingsData {
     return this._stateClusterRoleBindingsData;
+  }
+
+  @inject(StateUsersData)
+  private _stateUsersData: StateUsersData;
+
+  get stateUsersData(): StateUsersData {
+    return this._stateUsersData;
   }
 }
