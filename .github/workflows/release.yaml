@@ -55,6 +55,7 @@ jobs:
       - name: Publish OCI
         uses: podman-desktop/gh-extensions-actions/.github/actions/oci-publish@2e7a02e8c8e9256a2fa466fb166e215175130dd7 # v0.1.2
         with:
+          run-id: ${{ github.run_id }}
           artifact-id: ${{ needs.build.outputs.artifact-id }}
           github-token: ${{ github.token }}
           registry-username: ${{ github.repository_owner }}
