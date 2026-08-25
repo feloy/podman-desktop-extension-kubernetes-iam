@@ -78,28 +78,12 @@ jobs:
         run: pnpm build
         timeout-minutes: 40
 
-  extension-image:
-    name: Build extension OCI image
+  build-oci:
+    name: build oci image
     runs-on: ubuntu-24.04
-
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Build OCI
+        id: build
+        uses: podman-desktop/gh-extensions-actions/.github/actions/oci-build@2e7a02e8c8e9256a2fa466fb166e215175130dd7 # v0.1.2
         with:
-          fetch-depth: 0
-
-      - name: Install qemu dependency
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y qemu-user-static
-
-      - name: build extension image
-        id: extension-image
-        uses: redhat-actions/buildah-build@3a51aade9afa17e5c78256bcbe2e1ee08c7b995b # v3.0.2
-        with:
-          image: podman-desktop-extension-kubernetes-iam
-          tags: next ${{ github.sha }}
-          archs: amd64, arm64
-          containerfiles: |
-            build/Containerfile
-          context: .
-          oci: true
+          ref: ${{ github.ref }}
