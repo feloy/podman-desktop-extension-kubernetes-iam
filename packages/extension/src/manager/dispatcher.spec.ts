@@ -25,7 +25,7 @@ import type { RpcExtension } from '@kubernetes-iam/rpc';
 import type { ExtensionContext, TelemetryLogger } from '@podman-desktop/api';
 import type { Container } from 'inversify';
 import { InversifyBinding } from '/@/inject/inversify-binding.js';
-import { ROLES } from '@kubernetes-iam/channels';
+import { ROLES, USERS } from '@kubernetes-iam/channels';
 import { Dispatcher } from '/@/manager/dispatcher.js';
 import { ChannelSubscriber } from '/@/manager/channel-subscriber.js';
 import { DispatcherObject } from '/@/dispatcher/util/dispatcher-object.js';
@@ -36,6 +36,7 @@ const dashboardStatesManagerMock: DashboardStatesManager = {
   onRoleBindingsChange: vi.fn(),
   onClusterRolesChange: vi.fn(),
   onClusterRoleBindingsChange: vi.fn(),
+  onUsersChange: vi.fn(),
 } as unknown as DashboardStatesManager;
 const rpcExtension: RpcExtension = {
   fire: vi.fn(),
@@ -92,6 +93,19 @@ test('dispatchByChannelName is called when onSubscribe emits an event', async ()
   vi.spyOn(channelSubscriberMock, 'onSubscribe').mockImplementation(f => f('channel1') as IDisposable);
   dispatcher.init();
   expect(dispatchByChannelNameSpy).toHaveBeenCalledWith('channel1');
+});
+
+test('Dispatcher should dispatch users when onUsersChange event is fired', async () => {
+  const dispatcherSpy = vi.spyOn(dispatcher, 'dispatch').mockResolvedValue();
+  dispatcher.init();
+  expect(dispatcherSpy).not.toHaveBeenCalled();
+
+  vi.mocked(dashboardStatesManagerMock.onUsersChange).mockImplementation(f => f() as IDisposable);
+  dispatcher.init();
+  await vi.waitFor(() => {
+    expect(dispatcherSpy).toHaveBeenCalledTimes(1);
+  });
+  expect(dispatcherSpy).toHaveBeenCalledWith(USERS);
 });
 
 test('dispatch of the matching dispatcher is called when dispatchByChannelName is called', async () => {

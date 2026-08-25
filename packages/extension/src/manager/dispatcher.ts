@@ -20,7 +20,7 @@ import { RpcChannel } from '@kubernetes-iam/rpc';
 import { inject, injectable, multiInject } from 'inversify';
 import { DispatcherObject } from '/@/dispatcher/util/dispatcher-object';
 import { ChannelSubscriber } from '/@/manager/channel-subscriber';
-import { ROLES, ROLE_BINDINGS, CLUSTER_ROLES, CLUSTER_ROLE_BINDINGS } from '@kubernetes-iam/channels';
+import { ROLES, ROLE_BINDINGS, CLUSTER_ROLES, CLUSTER_ROLE_BINDINGS, USERS } from '@kubernetes-iam/channels';
 import { DashboardStatesManager } from '/@/manager/dashboard-states-manager';
 
 @injectable()
@@ -53,6 +53,9 @@ export class Dispatcher {
     });
     this.dashboardStatesManager.onClusterRoleBindingsChange(async () => {
       await this.dispatch(CLUSTER_ROLE_BINDINGS);
+    });
+    this.dashboardStatesManager.onUsersChange(async () => {
+      await this.dispatch(USERS);
     });
     this.#channelSubscriber.onSubscribe(async channelName => await this.dispatchByChannelName(channelName));
   }

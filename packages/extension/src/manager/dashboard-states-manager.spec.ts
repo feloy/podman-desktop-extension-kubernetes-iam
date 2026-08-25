@@ -16,7 +16,7 @@
  * SPDX-License-Identifier: Apache-2.0
  ***********************************************************************/
 
-import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import { afterEach, assert, beforeEach, describe, expect, test, vi } from 'vitest';
 import { DashboardStatesManager } from './dashboard-states-manager';
 import type { Disposable, ExtensionContext, TelemetryLogger } from '@podman-desktop/api';
 import { extensions } from '@podman-desktop/api';
@@ -28,7 +28,13 @@ import { InversifyBinding } from '/@/inject/inversify-binding';
 import type { RpcExtension } from '@kubernetes-iam/rpc';
 import type { Container } from 'inversify';
 import { DashboardApiManager } from '/@/manager/dashboard-api-manager';
-import type { RolesData, RoleBindingsData, ClusterRolesData, ClusterRoleBindingsData } from '@kubernetes-iam/channels';
+import type {
+  RolesData,
+  RoleBindingsData,
+  ClusterRolesData,
+  ClusterRoleBindingsData,
+  UsersData,
+} from '@kubernetes-iam/channels';
 
 let container: Container;
 
@@ -78,8 +84,10 @@ describe('dashboard extension is installed', () => {
   const onDidChangeDisposable: () => void = vi.fn();
   const subscriber: () => KubernetesDashboardSubscriber = vi.fn();
   const disposeSubscriber: () => void = vi.fn();
+  let onResourceUpdateMock: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
+    onResourceUpdateMock = vi.fn().mockReturnValue({ dispose: vi.fn() });
     vi.mocked(extensions.onDidChange).mockImplementation(f => {
       setTimeout(() => {
         f();
@@ -90,6 +98,7 @@ describe('dashboard extension is installed', () => {
     });
     vi.mocked(subscriber).mockReturnValue({
       dispose: disposeSubscriber,
+      onResourceUpdate: onResourceUpdateMock,
     } as unknown as KubernetesDashboardSubscriber);
     vi.mocked(dashboardApiManagerMock.getApi).mockReturnValue({
       getSubscriber: subscriber,
@@ -123,6 +132,93 @@ describe('dashboard extension is installed', () => {
     });
     manager.dispose();
     expect(disposeSubscriber).toHaveBeenCalled();
+  });
+
+  test('subscribes to four resource types via onResourceUpdate', async () => {
+    manager = container.get(DashboardStatesManager);
+    manager.init();
+    await vi.waitFor(() => {
+      expect(manager.getSubscriber()).toBeDefined();
+    });
+    expect(onResourceUpdateMock).toHaveBeenCalledTimes(4);
+    const resourceNames = onResourceUpdateMock.mock.calls.map(
+      (call: unknown[]) => (call[0] as { resourceName: string }).resourceName,
+    );
+    expect(resourceNames).toContain('roles');
+    expect(resourceNames).toContain('clusterroles');
+    expect(resourceNames).toContain('rolebindings');
+    expect(resourceNames).toContain('clusterrolebindings');
+  });
+
+  test('onResourceUpdate for rolebindings transforms and triggers recomputeUsers', async () => {
+    manager = container.get(DashboardStatesManager);
+    manager.init();
+    await vi.waitFor(() => {
+      expect(manager.getSubscriber()).toBeDefined();
+    });
+
+    const rolebindingsCall = onResourceUpdateMock.mock.calls.find(
+      (call: unknown[]) => (call[0] as { resourceName: string }).resourceName === 'rolebindings',
+    );
+    assert(rolebindingsCall);
+    const listener = rolebindingsCall[1] as (event: {
+      resources: { contextName?: string; resourceName: string; items: readonly Record<string, unknown>[] }[];
+    }) => void;
+
+    listener({
+      resources: [
+        {
+          contextName: 'ctx1',
+          resourceName: 'rolebindings',
+          items: [
+            {
+              metadata: { name: 'rb1', namespace: 'default' },
+              roleRef: { apiGroup: 'rbac.authorization.k8s.io', kind: 'Role', name: 'role1' },
+              subjects: [{ kind: 'User', name: 'alice', apiGroup: 'rbac.authorization.k8s.io' }],
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(manager.getRoleBindings().roleBindings).toHaveLength(1);
+    expect(manager.getRoleBindings().roleBindings[0]?.name).toBe('rb1');
+    expect(manager.getUsers().users).toHaveLength(1);
+    expect(manager.getUsers().users[0]?.name).toBe('alice');
+  });
+
+  test('onResourceUpdate for roles transforms items correctly', async () => {
+    manager = container.get(DashboardStatesManager);
+    manager.init();
+    await vi.waitFor(() => {
+      expect(manager.getSubscriber()).toBeDefined();
+    });
+
+    const rolesCall = onResourceUpdateMock.mock.calls.find(
+      (call: unknown[]) => (call[0] as { resourceName: string }).resourceName === 'roles',
+    );
+    assert(rolesCall);
+    const listener = rolesCall[1] as (event: {
+      resources: { contextName?: string; resourceName: string; items: readonly Record<string, unknown>[] }[];
+    }) => void;
+
+    listener({
+      resources: [
+        {
+          contextName: 'ctx1',
+          resourceName: 'roles',
+          items: [
+            {
+              metadata: { name: 'pod-reader', namespace: 'default' },
+              rules: [{ apiGroups: [''], resources: ['pods'], verbs: ['get', 'list'] }],
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(manager.getRoles().roles).toHaveLength(1);
+    expect(manager.getRoles().roles[0]?.name).toBe('pod-reader');
   });
 });
 
@@ -212,6 +308,21 @@ describe('RBAC data setters and getters', () => {
     };
     manager.setClusterRoleBindings(newClusterRoleBindings);
     expect(manager.getClusterRoleBindings()).toEqual(newClusterRoleBindings);
+    expect(callback).toHaveBeenCalled();
+  });
+
+  test('getUsers returns default empty data', () => {
+    expect(manager.getUsers()).toEqual({ users: [] });
+  });
+
+  test('setUsers updates data and fires onUsersChange', () => {
+    const callback = vi.fn();
+    manager.onUsersChange(callback);
+    const newUsers: UsersData = {
+      users: [{ kind: 'User', name: 'alice' }],
+    };
+    manager.setUsers(newUsers);
+    expect(manager.getUsers()).toEqual(newUsers);
     expect(callback).toHaveBeenCalled();
   });
 });
