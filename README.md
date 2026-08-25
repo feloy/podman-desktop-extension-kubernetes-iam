@@ -9,6 +9,17 @@ A Podman Desktop extension for managing Kubernetes RBAC resources (Roles, RoleBi
 - Create, edit, and delete RBAC resources through a user-friendly interface
 - Multi-context support
 
+## Installation
+
+Install the extension in Podman Desktop using one of the following OCI images:
+
+| Channel | Image | Description |
+|---------|-------|-------------|
+| Release | `ghcr.io/feloy/podman-desktop-extension-kubernetes-iam:latest` | Latest stable release |
+| Release (pinned) | `ghcr.io/feloy/podman-desktop-extension-kubernetes-iam:<version>` | Specific release version |
+| Development | `ghcr.io/feloy/podman-desktop-extension-kubernetes-iam:next` | Latest build from `main` branch |
+| Pull Request | `ghcr.io/feloy/podman-desktop-extension-kubernetes-iam/pr:<commit-sha>` | Build from a specific PR |
+
 ## Development
 
 ### Prerequisites
