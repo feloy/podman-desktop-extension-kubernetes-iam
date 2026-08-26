@@ -77,9 +77,15 @@ describe('dashboard extension is not installed', () => {
     manager.dispose();
     expect(onDidChangeDisposable).toHaveBeenCalled();
   });
+
+  test('registers onDidChange listener when API not available', () => {
+    manager = container.get(DashboardStatesManager);
+    manager.init();
+    expect(extensions.onDidChange).toHaveBeenCalled();
+  });
 });
 
-describe('dashboard extension is installed', () => {
+describe('dashboard extension is installed after init (onDidChange)', () => {
   let manager: DashboardStatesManager;
   const onDidChangeDisposable: () => void = vi.fn();
   const subscriber: () => KubernetesDashboardSubscriber = vi.fn();
@@ -100,9 +106,11 @@ describe('dashboard extension is installed', () => {
       dispose: disposeSubscriber,
       onResourceUpdate: onResourceUpdateMock,
     } as unknown as KubernetesDashboardSubscriber);
-    vi.mocked(dashboardApiManagerMock.getApi).mockReturnValue({
-      getSubscriber: subscriber,
-    } as unknown as KubernetesDashboardExtensionApi);
+    vi.mocked(dashboardApiManagerMock.getApi)
+      .mockReturnValueOnce(undefined)
+      .mockReturnValue({
+        getSubscriber: subscriber,
+      } as unknown as KubernetesDashboardExtensionApi);
   });
 
   afterEach(() => {
@@ -117,9 +125,12 @@ describe('dashboard extension is installed', () => {
     });
   });
 
-  test('onDidChangeDisposable is called', () => {
+  test('onDidChangeDisposable is called on dispose', async () => {
     manager = container.get(DashboardStatesManager);
     manager.init();
+    await vi.waitFor(() => {
+      expect(manager.getSubscriber()).toBeDefined();
+    });
     manager.dispose();
     expect(onDidChangeDisposable).toHaveBeenCalled();
   });
@@ -219,6 +230,65 @@ describe('dashboard extension is installed', () => {
 
     expect(manager.getRoles().roles).toHaveLength(1);
     expect(manager.getRoles().roles[0]?.name).toBe('pod-reader');
+  });
+});
+
+describe('dashboard extension is already installed at init time', () => {
+  let manager: DashboardStatesManager;
+  const onDidChangeDisposable: () => void = vi.fn();
+  const subscriber: () => KubernetesDashboardSubscriber = vi.fn();
+  const disposeSubscriber: () => void = vi.fn();
+  let onResourceUpdateMock: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    onResourceUpdateMock = vi.fn().mockReturnValue({ dispose: vi.fn() });
+    vi.mocked(extensions.onDidChange).mockReturnValue({
+      dispose: onDidChangeDisposable,
+    } as unknown as Disposable);
+    vi.mocked(subscriber).mockReturnValue({
+      dispose: disposeSubscriber,
+      onResourceUpdate: onResourceUpdateMock,
+    } as unknown as KubernetesDashboardSubscriber);
+    vi.mocked(dashboardApiManagerMock.getApi).mockReturnValue({
+      getSubscriber: subscriber,
+    } as unknown as KubernetesDashboardExtensionApi);
+  });
+
+  afterEach(() => {
+    manager?.dispose();
+  });
+
+  test('subscriber is defined immediately', () => {
+    manager = container.get(DashboardStatesManager);
+    manager.init();
+    expect(manager.getSubscriber()).toBeDefined();
+  });
+
+  test('disposes onDidChange listener immediately since API is already available', () => {
+    manager = container.get(DashboardStatesManager);
+    manager.init();
+    expect(extensions.onDidChange).toHaveBeenCalled();
+    expect(onDidChangeDisposable).toHaveBeenCalled();
+  });
+
+  test('subscribes to four resource types via onResourceUpdate', () => {
+    manager = container.get(DashboardStatesManager);
+    manager.init();
+    expect(onResourceUpdateMock).toHaveBeenCalledTimes(4);
+    const resourceNames = onResourceUpdateMock.mock.calls.map(
+      (call: unknown[]) => (call[0] as { resourceName: string }).resourceName,
+    );
+    expect(resourceNames).toContain('roles');
+    expect(resourceNames).toContain('clusterroles');
+    expect(resourceNames).toContain('rolebindings');
+    expect(resourceNames).toContain('clusterrolebindings');
+  });
+
+  test('subscriber is disposed on dispose', () => {
+    manager = container.get(DashboardStatesManager);
+    manager.init();
+    manager.dispose();
+    expect(disposeSubscriber).toHaveBeenCalled();
   });
 });
 
