@@ -92,6 +92,25 @@ export class DashboardStatesManager implements Disposable {
     this.#subscriptions.push(this.#subscriber);
 
     this.#subscriptions.push(
+      this.#subscriber.onContextsHealth(() => {
+        this.#subscribeToResources();
+      }),
+    );
+
+    this.onRoleBindingsChange(() => this.#recomputeUsers());
+    this.onClusterRoleBindingsChange(() => this.#recomputeUsers());
+    return true;
+  }
+
+  #resourcesSubscribed = false;
+
+  #subscribeToResources(): void {
+    if (this.#resourcesSubscribed || !this.#subscriber) {
+      return;
+    }
+    this.#resourcesSubscribed = true;
+
+    this.#subscriptions.push(
       this.#subscriber.onResourceUpdate({ resourceName: 'roles' }, event => {
         this.setRoles({
           roles: event.resources.flatMap(r => r.items.map(item => toRoleInfo(item, r.contextName ?? ''))),
@@ -121,10 +140,6 @@ export class DashboardStatesManager implements Disposable {
         });
       }),
     );
-
-    this.onRoleBindingsChange(() => this.#recomputeUsers());
-    this.onClusterRoleBindingsChange(() => this.#recomputeUsers());
-    return true;
   }
 
   dispose(): void {

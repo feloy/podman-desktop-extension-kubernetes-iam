@@ -91,9 +91,15 @@ describe('dashboard extension is installed after init (onDidChange)', () => {
   const subscriber: () => KubernetesDashboardSubscriber = vi.fn();
   const disposeSubscriber: () => void = vi.fn();
   let onResourceUpdateMock: ReturnType<typeof vi.fn>;
+  let onContextsHealthMock: ReturnType<typeof vi.fn>;
+  let fireContextsHealth: () => void;
 
   beforeEach(() => {
     onResourceUpdateMock = vi.fn().mockReturnValue({ dispose: vi.fn() });
+    onContextsHealthMock = vi.fn().mockImplementation((listener: () => void) => {
+      fireContextsHealth = listener;
+      return { dispose: vi.fn() };
+    });
     vi.mocked(extensions.onDidChange).mockImplementation(f => {
       setTimeout(() => {
         f();
@@ -105,6 +111,7 @@ describe('dashboard extension is installed after init (onDidChange)', () => {
     vi.mocked(subscriber).mockReturnValue({
       dispose: disposeSubscriber,
       onResourceUpdate: onResourceUpdateMock,
+      onContextsHealth: onContextsHealthMock,
     } as unknown as KubernetesDashboardSubscriber);
     vi.mocked(dashboardApiManagerMock.getApi)
       .mockReturnValueOnce(undefined)
@@ -145,12 +152,23 @@ describe('dashboard extension is installed after init (onDidChange)', () => {
     expect(disposeSubscriber).toHaveBeenCalled();
   });
 
-  test('subscribes to four resource types via onResourceUpdate', async () => {
+  test('does not subscribe to onResourceUpdate before onContextsHealth fires', async () => {
     manager = container.get(DashboardStatesManager);
     manager.init();
     await vi.waitFor(() => {
       expect(manager.getSubscriber()).toBeDefined();
     });
+    expect(onContextsHealthMock).toHaveBeenCalled();
+    expect(onResourceUpdateMock).not.toHaveBeenCalled();
+  });
+
+  test('subscribes to four resource types after onContextsHealth fires', async () => {
+    manager = container.get(DashboardStatesManager);
+    manager.init();
+    await vi.waitFor(() => {
+      expect(manager.getSubscriber()).toBeDefined();
+    });
+    fireContextsHealth();
     expect(onResourceUpdateMock).toHaveBeenCalledTimes(4);
     const resourceNames = onResourceUpdateMock.mock.calls.map(
       (call: unknown[]) => (call[0] as { resourceName: string }).resourceName,
@@ -161,12 +179,25 @@ describe('dashboard extension is installed after init (onDidChange)', () => {
     expect(resourceNames).toContain('clusterrolebindings');
   });
 
+  test('subscribes to onResourceUpdate only once even if onContextsHealth fires multiple times', async () => {
+    manager = container.get(DashboardStatesManager);
+    manager.init();
+    await vi.waitFor(() => {
+      expect(manager.getSubscriber()).toBeDefined();
+    });
+    fireContextsHealth();
+    fireContextsHealth();
+    fireContextsHealth();
+    expect(onResourceUpdateMock).toHaveBeenCalledTimes(4);
+  });
+
   test('onResourceUpdate for rolebindings transforms and triggers recomputeUsers', async () => {
     manager = container.get(DashboardStatesManager);
     manager.init();
     await vi.waitFor(() => {
       expect(manager.getSubscriber()).toBeDefined();
     });
+    fireContextsHealth();
 
     const rolebindingsCall = onResourceUpdateMock.mock.calls.find(
       (call: unknown[]) => (call[0] as { resourceName: string }).resourceName === 'rolebindings',
@@ -204,6 +235,7 @@ describe('dashboard extension is installed after init (onDidChange)', () => {
     await vi.waitFor(() => {
       expect(manager.getSubscriber()).toBeDefined();
     });
+    fireContextsHealth();
 
     const rolesCall = onResourceUpdateMock.mock.calls.find(
       (call: unknown[]) => (call[0] as { resourceName: string }).resourceName === 'roles',
@@ -239,15 +271,22 @@ describe('dashboard extension is already installed at init time', () => {
   const subscriber: () => KubernetesDashboardSubscriber = vi.fn();
   const disposeSubscriber: () => void = vi.fn();
   let onResourceUpdateMock: ReturnType<typeof vi.fn>;
+  let onContextsHealthMock: ReturnType<typeof vi.fn>;
+  let fireContextsHealth: () => void;
 
   beforeEach(() => {
     onResourceUpdateMock = vi.fn().mockReturnValue({ dispose: vi.fn() });
+    onContextsHealthMock = vi.fn().mockImplementation((listener: () => void) => {
+      fireContextsHealth = listener;
+      return { dispose: vi.fn() };
+    });
     vi.mocked(extensions.onDidChange).mockReturnValue({
       dispose: onDidChangeDisposable,
     } as unknown as Disposable);
     vi.mocked(subscriber).mockReturnValue({
       dispose: disposeSubscriber,
       onResourceUpdate: onResourceUpdateMock,
+      onContextsHealth: onContextsHealthMock,
     } as unknown as KubernetesDashboardSubscriber);
     vi.mocked(dashboardApiManagerMock.getApi).mockReturnValue({
       getSubscriber: subscriber,
@@ -271,9 +310,11 @@ describe('dashboard extension is already installed at init time', () => {
     expect(onDidChangeDisposable).toHaveBeenCalled();
   });
 
-  test('subscribes to four resource types via onResourceUpdate', () => {
+  test('subscribes to four resource types after onContextsHealth fires', () => {
     manager = container.get(DashboardStatesManager);
     manager.init();
+    expect(onResourceUpdateMock).not.toHaveBeenCalled();
+    fireContextsHealth();
     expect(onResourceUpdateMock).toHaveBeenCalledTimes(4);
     const resourceNames = onResourceUpdateMock.mock.calls.map(
       (call: unknown[]) => (call[0] as { resourceName: string }).resourceName,
