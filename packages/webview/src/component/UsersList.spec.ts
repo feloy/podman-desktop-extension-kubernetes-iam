@@ -22,6 +22,8 @@ import type { UsersData } from '@kubernetes-iam/channels';
 import UsersList from './UsersList.svelte';
 import { StatesMocks } from '/@/tests/state-mocks';
 import { FakeStateObject } from '/@/state/util/fake-state-object.svelte';
+import * as uiSvelte from '@podman-desktop/ui-svelte';
+import type { SvelteComponent } from 'svelte';
 
 const statesMocks = new StatesMocks();
 let usersStateMock: FakeStateObject<UsersData, void>;
@@ -31,6 +33,8 @@ beforeEach(() => {
   statesMocks.reset();
   usersStateMock = new FakeStateObject();
   statesMocks.mock<UsersData, void>('stateUsersData', usersStateMock);
+  vi.spyOn(uiSvelte, 'Table').mockImplementation(vi.fn());
+  vi.spyOn(uiSvelte, 'FilteredEmptyScreen').mockImplementation(vi.fn());
 });
 
 describe('UsersList', () => {
@@ -45,7 +49,7 @@ describe('UsersList', () => {
     expect(screen.getByText('No users found.')).toBeDefined();
   });
 
-  test('displays user names', () => {
+  test('passes user data to Table component', () => {
     usersStateMock.setData({
       users: [
         { kind: 'User', name: 'alice' },
@@ -53,46 +57,47 @@ describe('UsersList', () => {
       ],
     });
     render(UsersList);
-    expect(screen.getByText('alice')).toBeDefined();
-    expect(screen.getByText('developers')).toBeDefined();
+
+    expect(uiSvelte.Table).toHaveBeenCalled();
+    const props = vi.mocked(uiSvelte.Table as unknown as SvelteComponent).mock.calls[0][1];
+    expect(props.data).toHaveLength(2);
+    expect(props.data[0]).toMatchObject({ name: 'alice', kind: 'User' });
+    expect(props.data[1]).toMatchObject({ name: 'developers', kind: 'Group' });
   });
 
-  test('displays user kind', () => {
-    usersStateMock.setData({
-      users: [{ kind: 'ServiceAccount', name: 'default' }],
-    });
-    render(UsersList);
-    expect(screen.getByText('(ServiceAccount)')).toBeDefined();
-  });
-
-  test('displays namespace when present', () => {
+  test('passes namespace in user data', () => {
     usersStateMock.setData({
       users: [{ kind: 'ServiceAccount', name: 'default', namespace: 'kube-system' }],
     });
     render(UsersList);
-    expect(screen.getByText('in kube-system')).toBeDefined();
+
+    expect(uiSvelte.Table).toHaveBeenCalled();
+    const props = vi.mocked(uiSvelte.Table as unknown as SvelteComponent).mock.calls[0][1];
+    expect(props.data).toHaveLength(1);
+    expect(props.data[0]).toMatchObject({ name: 'default', kind: 'ServiceAccount', namespace: 'kube-system' });
   });
 
-  test('does not display namespace text when absent', () => {
-    usersStateMock.setData({
-      users: [{ kind: 'User', name: 'alice' }],
-    });
+  test('table has Namespace, Name, Type and Scope columns', () => {
+    usersStateMock.setData({ users: [{ kind: 'User', name: 'alice' }] });
     render(UsersList);
-    expect(screen.queryByText(/^in /)).toBeNull();
+
+    expect(uiSvelte.Table).toHaveBeenCalled();
+    const props = vi.mocked(uiSvelte.Table as unknown as SvelteComponent).mock.calls[0][1];
+    const columnTitles = (props.columns as { title: string }[]).map(c => c.title);
+    expect(columnTitles).toEqual(['Namespace', 'Name', 'Type', 'Scope']);
   });
 
-  test('displays multiple users', () => {
-    usersStateMock.setData({
-      users: [
-        { kind: 'User', name: 'alice' },
-        { kind: 'User', name: 'bob' },
-        { kind: 'Group', name: 'admins', apiGroup: 'rbac.authorization.k8s.io' },
-      ],
-    });
+  test('table kind is set to user', () => {
+    usersStateMock.setData({ users: [{ kind: 'User', name: 'alice' }] });
     render(UsersList);
-    expect(screen.getByText('alice')).toBeDefined();
-    expect(screen.getByText('bob')).toBeDefined();
-    expect(screen.getByText('admins')).toBeDefined();
-    expect(screen.queryByText('No users found.')).toBeNull();
+
+    expect(uiSvelte.Table).toHaveBeenCalled();
+    const props = vi.mocked(uiSvelte.Table as unknown as SvelteComponent).mock.calls[0][1];
+    expect(props.kind).toBe('user');
+  });
+
+  test('displays page title', () => {
+    render(UsersList);
+    expect(screen.getByRole('region', { name: 'Users' })).toBeDefined();
   });
 });
