@@ -67,52 +67,79 @@ export class DashboardStatesManager implements Disposable {
 
   init(): void {
     const didChangeSubscription = extensions.onDidChange(() => {
-      const api = this.dashboardApiManager.getApi();
-      if (api) {
-        this.#subscriber = api.getSubscriber();
-        this.#subscriptions.push(this.#subscriber);
+      if (this.#connectToDashboard()) {
         didChangeSubscription.dispose();
-
-        this.#subscriptions.push(
-          this.#subscriber.onResourceUpdate({ resourceName: 'roles' }, event => {
-            this.setRoles({
-              roles: event.resources.flatMap(r => r.items.map(item => toRoleInfo(item, r.contextName ?? ''))),
-            });
-          }),
-        );
-        this.#subscriptions.push(
-          this.#subscriber.onResourceUpdate({ resourceName: 'clusterroles' }, event => {
-            this.setClusterRoles({
-              clusterRoles: event.resources.flatMap(r =>
-                r.items.map(item => toClusterRoleInfo(item, r.contextName ?? '')),
-              ),
-            });
-          }),
-        );
-        this.#subscriptions.push(
-          this.#subscriber.onResourceUpdate({ resourceName: 'rolebindings' }, event => {
-            this.setRoleBindings({
-              roleBindings: event.resources.flatMap(r =>
-                r.items.map(item => toRoleBindingInfo(item, r.contextName ?? '')),
-              ),
-            });
-          }),
-        );
-        this.#subscriptions.push(
-          this.#subscriber.onResourceUpdate({ resourceName: 'clusterrolebindings' }, event => {
-            this.setClusterRoleBindings({
-              clusterRoleBindings: event.resources.flatMap(r =>
-                r.items.map(item => toClusterRoleBindingInfo(item, r.contextName ?? '')),
-              ),
-            });
-          }),
-        );
-
-        this.onRoleBindingsChange(() => this.#recomputeUsers());
-        this.onClusterRoleBindingsChange(() => this.#recomputeUsers());
       }
     });
     this.#subscriptions.push(didChangeSubscription);
+
+    if (this.#connectToDashboard()) {
+      didChangeSubscription.dispose();
+    }
+  }
+
+  #connectToDashboard(): boolean {
+    if (this.#subscriber) {
+      return true;
+    }
+
+    const api = this.dashboardApiManager.getApi();
+    if (!api) {
+      return false;
+    }
+
+    this.#subscriber = api.getSubscriber();
+    this.#subscriptions.push(this.#subscriber);
+
+    this.#subscriptions.push(
+      this.#subscriber.onContextsHealth(() => {
+        this.#subscribeToResources();
+      }),
+    );
+
+    this.onRoleBindingsChange(() => this.#recomputeUsers());
+    this.onClusterRoleBindingsChange(() => this.#recomputeUsers());
+    return true;
+  }
+
+  #resourcesSubscribed = false;
+
+  #subscribeToResources(): void {
+    if (this.#resourcesSubscribed || !this.#subscriber) {
+      return;
+    }
+    this.#resourcesSubscribed = true;
+
+    this.#subscriptions.push(
+      this.#subscriber.onResourceUpdate({ resourceName: 'roles' }, event => {
+        this.setRoles({
+          roles: event.resources.flatMap(r => r.items.map(item => toRoleInfo(item, r.contextName ?? ''))),
+        });
+      }),
+    );
+    this.#subscriptions.push(
+      this.#subscriber.onResourceUpdate({ resourceName: 'clusterroles' }, event => {
+        this.setClusterRoles({
+          clusterRoles: event.resources.flatMap(r => r.items.map(item => toClusterRoleInfo(item, r.contextName ?? ''))),
+        });
+      }),
+    );
+    this.#subscriptions.push(
+      this.#subscriber.onResourceUpdate({ resourceName: 'rolebindings' }, event => {
+        this.setRoleBindings({
+          roleBindings: event.resources.flatMap(r => r.items.map(item => toRoleBindingInfo(item, r.contextName ?? ''))),
+        });
+      }),
+    );
+    this.#subscriptions.push(
+      this.#subscriber.onResourceUpdate({ resourceName: 'clusterrolebindings' }, event => {
+        this.setClusterRoleBindings({
+          clusterRoleBindings: event.resources.flatMap(r =>
+            r.items.map(item => toClusterRoleBindingInfo(item, r.contextName ?? '')),
+          ),
+        });
+      }),
+    );
   }
 
   dispose(): void {
