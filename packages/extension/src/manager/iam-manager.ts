@@ -26,6 +26,9 @@ import type {
   CreateUserRequest,
   CreateRoleForUserRequest,
   CreateClusterRoleForUserRequest,
+  AddRoleRuleRequest,
+  AddClusterRoleRuleRequest,
+  PolicyRuleInfo,
   GenerateKubeconfigRequest,
   GetUserDetailsRequest,
   UserDetailsData,
@@ -52,6 +55,39 @@ const RBAC_API_GROUP = 'rbac.authorization.k8s.io';
  */
 const DEFAULT_CLUSTER_ROLE = 'system:basic-user';
 const DEFAULT_BINDING_SUFFIX = 'basic-user';
+
+function nonEmptyEntries(values: string[]): string[] {
+  return values.map(value => value.trim()).filter(value => value.length > 0);
+}
+
+/**
+ * Normalizes a rule and rejects the ones Kubernetes would not accept.
+ *
+ * The core API group is named by the empty string, so a blank is meaningful in `apiGroups`
+ * and is kept there, while it is only noise in the other lists.
+ */
+function checkedRule(rule: PolicyRuleInfo): PolicyRuleInfo {
+  const apiGroups = rule.apiGroups.map(apiGroup => apiGroup.trim());
+  const resources = nonEmptyEntries(rule.resources);
+  const verbs = nonEmptyEntries(rule.verbs);
+  const resourceNames = nonEmptyEntries(rule.resourceNames ?? []);
+  if (resources.length === 0) {
+    throw new Error('A rule needs at least one resource');
+  }
+  if (verbs.length === 0) {
+    throw new Error('A rule needs at least one verb');
+  }
+
+  const checked: PolicyRuleInfo = {
+    apiGroups: apiGroups.length > 0 ? apiGroups : [''],
+    resources,
+    verbs,
+  };
+  if (resourceNames.length > 0) {
+    checked.resourceNames = resourceNames;
+  }
+  return checked;
+}
 
 @injectable()
 export class IamManager implements IamApi {
@@ -209,6 +245,56 @@ export class IamManager implements IamApi {
         metadata: { name },
         roleRef: { apiGroup: RBAC_API_GROUP, kind: 'ClusterRole', name },
         subjects: [{ apiGroup: RBAC_API_GROUP, kind: 'User', name: username }],
+      },
+    ]);
+  }
+
+  async addRuleToRole(request: AddRoleRuleRequest): Promise<void> {
+    this.telemetryLogger.logUsage('addRuleToRole');
+    const name = request.name.trim();
+    const namespace = request.namespace.trim();
+    if (!isValidResourceName(name)) {
+      throw new Error(`Invalid role name: ${request.name}`);
+    }
+    if (!isValidNamespaceName(namespace)) {
+      throw new Error(`Invalid namespace: ${request.namespace}`);
+    }
+    const rule = checkedRule(request.rule);
+    const role = this.dashboardStatesManager.getRoles().roles.find(r => r.namespace === namespace && r.name === name);
+    if (!role) {
+      throw new Error(`No role named ${name} in namespace ${namespace}`);
+    }
+
+    // The rules are applied as a whole: an apply carrying the new rule alone would drop
+    // the rules the role already holds.
+    await this.applyManifests([
+      {
+        apiVersion: `${RBAC_API_GROUP}/v1`,
+        kind: 'Role',
+        metadata: { name, namespace },
+        rules: [...role.rules, rule],
+      },
+    ]);
+  }
+
+  async addRuleToClusterRole(request: AddClusterRoleRuleRequest): Promise<void> {
+    this.telemetryLogger.logUsage('addRuleToClusterRole');
+    const name = request.name.trim();
+    if (!isValidResourceName(name)) {
+      throw new Error(`Invalid cluster role name: ${request.name}`);
+    }
+    const rule = checkedRule(request.rule);
+    const clusterRole = this.dashboardStatesManager.getClusterRoles().clusterRoles.find(r => r.name === name);
+    if (!clusterRole) {
+      throw new Error(`No cluster role named ${name}`);
+    }
+
+    await this.applyManifests([
+      {
+        apiVersion: `${RBAC_API_GROUP}/v1`,
+        kind: 'ClusterRole',
+        metadata: { name },
+        rules: [...clusterRole.rules, rule],
       },
     ]);
   }

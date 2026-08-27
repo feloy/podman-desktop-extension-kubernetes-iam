@@ -60,6 +60,17 @@ export interface CreateClusterRoleForUserRequest {
   name: string;
 }
 
+export interface AddRoleRuleRequest {
+  namespace: string;
+  name: string;
+  rule: PolicyRuleInfo;
+}
+
+export interface AddClusterRoleRuleRequest {
+  name: string;
+  rule: PolicyRuleInfo;
+}
+
 export interface GenerateKubeconfigRequest {
   username: string;
   expirationSeconds?: number;
@@ -109,6 +120,16 @@ export interface IamApi {
    * and a ClusterRoleBinding granting it to the user.
    */
   createClusterRoleForUser(request: CreateClusterRoleForUserRequest): Promise<void>;
+
+  /**
+   * Appends a rule to the rules of an existing Role.
+   */
+  addRuleToRole(request: AddRoleRuleRequest): Promise<void>;
+
+  /**
+   * Appends a rule to the rules of an existing ClusterRole.
+   */
+  addRuleToClusterRole(request: AddClusterRoleRuleRequest): Promise<void>;
 
   generateKubeconfig(request: GenerateKubeconfigRequest): Promise<void>;
 

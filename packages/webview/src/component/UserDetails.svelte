@@ -15,15 +15,9 @@ import { API_IAM } from '@kubernetes-iam/channels';
 import { Remote } from '/@/remote/remote';
 import { States } from '/@/state/states';
 import CreateRoleForUserDialog from './users/CreateRoleForUserDialog.svelte';
-
-interface RoleRowUI {
-  selected?: boolean;
-  name: string;
-  col2: string;
-  col3: string;
-  col4: string;
-  children?: RoleRowUI[];
-}
+import AddRuleDialog from './users/AddRuleDialog.svelte';
+import AddRuleAction from './users/AddRuleAction.svelte';
+import type { RoleRef, RoleRowUI } from './users/RoleRowUI';
 
 interface Props {
   name: string;
@@ -37,6 +31,7 @@ let details: UserDetailsData | undefined = $state(undefined);
 let loading = $state(true);
 let error: string | undefined = $state(undefined);
 let roleDialogKind: 'Role' | 'ClusterRole' | undefined = $state(undefined);
+let ruleDialogRole: RoleRef | undefined = $state(undefined);
 
 let subscribers: Unsubscriber[] = [];
 
@@ -92,18 +87,24 @@ async function loadDetails(): Promise<void> {
 
 function toUI(d: UserDetailsData | undefined): RoleRowUI[] {
   if (!d) return [];
-  return d.roles.map(r => ({
-    name: r.roleName,
-    col2: r.roleKind,
-    col3: r.bindingName,
-    col4: r.namespace ?? 'Cluster-wide',
-    children: r.rules.map((rule, i) => ({
-      name: rule.apiGroups.map(g => (g === '' ? 'core' : g)).join(', ') || '*',
-      col2: rule.resources.join(', ') || '*',
-      col3: rule.verbs.join(', '),
-      col4: rule.resourceNames?.join(', ') ?? '',
-    })),
-  }));
+  return d.roles.map(r => {
+    // A rule is added to the role itself, which a namespace tells apart from a cluster role.
+    const role: RoleRef = { kind: r.roleKind, name: r.roleName, namespace: r.namespace };
+    return {
+      name: r.roleName,
+      col2: r.roleKind,
+      col3: r.bindingName,
+      col4: r.namespace ?? 'Cluster-wide',
+      role,
+      onAddRule: (): RoleRef => (ruleDialogRole = role),
+      children: r.rules.map(rule => ({
+        name: rule.apiGroups.map(g => (g === '' ? 'core' : g)).join(', ') || '*',
+        col2: rule.resources.join(', ') || '*',
+        col3: rule.verbs.join(', '),
+        col4: rule.resourceNames?.join(', ') ?? '',
+      })),
+    };
+  });
 }
 
 const roles: RoleRowUI[] = $derived(toUI(details));
@@ -132,7 +133,14 @@ const scopeColumn = new TableColumn<RoleRowUI, string>('Scope / Res. Names', {
   comparator: (a, b): number => a.col4.localeCompare(b.col4),
 });
 
-const columns = [roleColumn, kindColumn, bindingColumn, scopeColumn];
+const actionsColumn = new TableColumn<RoleRowUI, RoleRowUI>('Actions', {
+  align: 'right',
+  renderMapping: (r): RoleRowUI => r,
+  renderer: AddRuleAction,
+  overflow: true,
+});
+
+const columns = [roleColumn, kindColumn, bindingColumn, scopeColumn, actionsColumn];
 const row = new TableRow<RoleRowUI>({
   selectable: (): boolean => false,
   children: (r): RoleRowUI[] => r.children ?? [],
@@ -184,4 +192,8 @@ function goBack(): void {
     username={name}
     clusterScoped={roleDialogKind === 'ClusterRole'}
     onclose={(): undefined => (roleDialogKind = undefined)} />
+{/if}
+
+{#if ruleDialogRole}
+  <AddRuleDialog role={ruleDialogRole} onclose={(): undefined => (ruleDialogRole = undefined)} />
 {/if}

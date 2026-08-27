@@ -27,6 +27,7 @@ import type {
 } from '@kubernetes-iam/channels';
 import { API_IAM } from '@kubernetes-iam/channels';
 import UserDetails from './UserDetails.svelte';
+import type { RoleRowUI } from './users/RoleRowUI';
 import { StatesMocks } from '/@/tests/state-mocks';
 import { RemoteMocks } from '/@/tests/remote-mocks';
 import { FakeStateObject } from '/@/state/util/fake-state-object.svelte';
@@ -48,6 +49,8 @@ beforeEach(() => {
     getUserDetails: vi.fn().mockResolvedValue({ name: 'alice', kind: 'User', roles: [] }),
     createRoleForUser: vi.fn().mockResolvedValue(undefined),
     createClusterRoleForUser: vi.fn().mockResolvedValue(undefined),
+    addRuleToRole: vi.fn().mockResolvedValue(undefined),
+    addRuleToClusterRole: vi.fn().mockResolvedValue(undefined),
   } as unknown as IamApi);
   statesMocks.reset();
   rolesStateMock = new FakeStateObject();
@@ -64,6 +67,38 @@ beforeEach(() => {
 async function renderDetails(): Promise<void> {
   render(UserDetails, { name: 'alice' });
   await waitFor(() => expect(remoteMocks.get(API_IAM).getUserDetails).toHaveBeenCalledWith({ userName: 'alice' }));
+}
+
+/**
+ * Renders the page on a user holding the given role and opens the rule dialog through the
+ * callback its row carries: the table is mocked, so the cell rendering the action is never
+ * mounted.
+ */
+async function openRuleDialog(role: { kind: string; name: string; namespace?: string }): Promise<void> {
+  vi.mocked(remoteMocks.get(API_IAM).getUserDetails).mockResolvedValue({
+    name: 'alice',
+    kind: 'User',
+    roles: [
+      {
+        bindingName: 'binding',
+        bindingKind: role.namespace === undefined ? 'ClusterRoleBinding' : 'RoleBinding',
+        roleName: role.name,
+        roleKind: role.kind,
+        namespace: role.namespace,
+        rules: [],
+      },
+    ],
+  });
+  await renderDetails();
+
+  await waitFor(() => expect(uiSvelte.Table).toHaveBeenCalled());
+  const calls = vi.mocked(uiSvelte.Table as unknown as SvelteComponent).mock.calls;
+  const rows = calls[calls.length - 1][1].data as RoleRowUI[];
+  const row = rows.find(r => r.role?.name === role.name);
+  expect(row?.onAddRule).toBeDefined();
+  row?.onAddRule?.();
+
+  await waitFor(() => expect(screen.getByRole('dialog', { name: 'Add rule' })).toBeDefined());
 }
 
 describe('UserDetails', () => {
@@ -154,5 +189,106 @@ describe('UserDetails', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'Create' }));
 
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Create role' })).toBeNull());
+  });
+
+  test('offers a rule action on the role rows only', async () => {
+    vi.mocked(remoteMocks.get(API_IAM).getUserDetails).mockResolvedValue({
+      name: 'alice',
+      kind: 'User',
+      roles: [
+        {
+          bindingName: 'rb1',
+          bindingKind: 'RoleBinding',
+          roleName: 'pod-reader',
+          roleKind: 'Role',
+          namespace: 'default',
+          rules: [{ apiGroups: [''], resources: ['pods'], verbs: ['get'] }],
+        },
+      ],
+    });
+    await renderDetails();
+
+    await waitFor(() => expect(uiSvelte.Table).toHaveBeenCalled());
+    const calls = vi.mocked(uiSvelte.Table as unknown as SvelteComponent).mock.calls;
+    const props = calls[calls.length - 1][1];
+    expect((props.columns as { title: string }[]).map(c => c.title)).toContain('Actions');
+    expect(props.data[0].role).toEqual({ kind: 'Role', name: 'pod-reader', namespace: 'default' });
+    expect(props.data[0].children[0].role).toBeUndefined();
+  });
+
+  test('adds a rule to the role of the row', async () => {
+    await openRuleDialog({ kind: 'Role', name: 'pod-reader', namespace: 'default' });
+
+    await fireEvent.input(screen.getByRole('textbox', { name: 'API groups' }), { target: { value: 'apps' } });
+    await fireEvent.input(screen.getByRole('textbox', { name: 'Resources' }), { target: { value: 'deployments' } });
+    await fireEvent.input(screen.getByRole('textbox', { name: 'Verbs' }), { target: { value: 'get, list' } });
+    await fireEvent.click(screen.getByRole('button', { name: 'Add' }));
+
+    expect(remoteMocks.get(API_IAM).addRuleToRole).toHaveBeenCalledWith({
+      namespace: 'default',
+      name: 'pod-reader',
+      rule: { apiGroups: ['apps'], resources: ['deployments'], verbs: ['get', 'list'], resourceNames: [] },
+    });
+  });
+
+  test('adds a rule to a cluster role, on the core API group by default', async () => {
+    await openRuleDialog({ kind: 'ClusterRole', name: 'node-reader' });
+
+    await fireEvent.input(screen.getByRole('textbox', { name: 'Resources' }), { target: { value: 'nodes' } });
+    await fireEvent.input(screen.getByRole('textbox', { name: 'Verbs' }), { target: { value: 'get' } });
+    await fireEvent.click(screen.getByRole('button', { name: 'Add' }));
+
+    expect(remoteMocks.get(API_IAM).addRuleToClusterRole).toHaveBeenCalledWith({
+      name: 'node-reader',
+      rule: { apiGroups: [''], resources: ['nodes'], verbs: ['get'], resourceNames: [] },
+    });
+  });
+
+  test('adds a rule to a cluster role bound through a namespaced binding', async () => {
+    await openRuleDialog({ kind: 'ClusterRole', name: 'view', namespace: 'default' });
+
+    await fireEvent.input(screen.getByRole('textbox', { name: 'Resources' }), { target: { value: 'pods' } });
+    await fireEvent.input(screen.getByRole('textbox', { name: 'Verbs' }), { target: { value: 'get' } });
+    await fireEvent.click(screen.getByRole('button', { name: 'Add' }));
+
+    expect(remoteMocks.get(API_IAM).addRuleToClusterRole).toHaveBeenCalledWith({
+      name: 'view',
+      rule: { apiGroups: [''], resources: ['pods'], verbs: ['get'], resourceNames: [] },
+    });
+    expect(remoteMocks.get(API_IAM).addRuleToRole).not.toHaveBeenCalled();
+  });
+
+  test('sends the core API group under the name Kubernetes gives it', async () => {
+    await openRuleDialog({ kind: 'ClusterRole', name: 'node-reader' });
+
+    await fireEvent.input(screen.getByRole('textbox', { name: 'API groups' }), { target: { value: 'core, apps' } });
+    await fireEvent.input(screen.getByRole('textbox', { name: 'Resources' }), { target: { value: 'nodes' } });
+    await fireEvent.input(screen.getByRole('textbox', { name: 'Verbs' }), { target: { value: 'get' } });
+    await fireEvent.click(screen.getByRole('button', { name: 'Add' }));
+
+    expect(remoteMocks.get(API_IAM).addRuleToClusterRole).toHaveBeenCalledWith({
+      name: 'node-reader',
+      rule: { apiGroups: ['', 'apps'], resources: ['nodes'], verbs: ['get'], resourceNames: [] },
+    });
+  });
+
+  test('refuses a rule without any resource or verb', async () => {
+    await openRuleDialog({ kind: 'Role', name: 'pod-reader', namespace: 'default' });
+
+    await fireEvent.input(screen.getByRole('textbox', { name: 'Resources' }), { target: { value: 'pods' } });
+    await fireEvent.click(screen.getByRole('button', { name: 'Add' }));
+
+    expect(remoteMocks.get(API_IAM).addRuleToRole).not.toHaveBeenCalled();
+  });
+
+  test('displays the error when the rule is refused', async () => {
+    vi.mocked(remoteMocks.get(API_IAM).addRuleToRole).mockRejectedValue(new Error('No role named pod-reader'));
+    await openRuleDialog({ kind: 'Role', name: 'pod-reader', namespace: 'default' });
+
+    await fireEvent.input(screen.getByRole('textbox', { name: 'Resources' }), { target: { value: 'pods' } });
+    await fireEvent.input(screen.getByRole('textbox', { name: 'Verbs' }), { target: { value: 'get' } });
+    await fireEvent.click(screen.getByRole('button', { name: 'Add' }));
+
+    await waitFor(() => expect(screen.getByText('No role named pod-reader')).toBeDefined());
   });
 });
