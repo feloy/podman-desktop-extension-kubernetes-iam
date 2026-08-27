@@ -24,6 +24,8 @@ import type {
   CreateClusterRoleRequest,
   CreateClusterRoleBindingRequest,
   CreateUserRequest,
+  CreateRoleForUserRequest,
+  CreateClusterRoleForUserRequest,
   GenerateKubeconfigRequest,
   GetUserDetailsRequest,
   UserDetailsData,
@@ -35,6 +37,7 @@ import { DashboardApiManager } from '/@/manager/dashboard-api-manager';
 import { DashboardStatesManager } from '/@/manager/dashboard-states-manager';
 import { KubeconfigGenerator } from '/@/manager/kubeconfig-generator';
 import { isValidUsername, toBindingName } from '/@/manager/user-names';
+import { isValidNamespaceName, isValidResourceName } from '/@/manager/resource-names';
 import { stringify } from 'yaml';
 
 const RBAC_API_GROUP = 'rbac.authorization.k8s.io';
@@ -132,10 +135,7 @@ export class IamManager implements IamApi {
 
   async createUser(request: CreateUserRequest): Promise<void> {
     this.telemetryLogger.logUsage('createUser');
-    const username = request.username.trim();
-    if (!isValidUsername(username)) {
-      throw new Error(`Invalid user name: ${request.username}`);
-    }
+    const username = this.checkedUsername(request.username);
     await this.applyClusterRoleBinding({
       name: toBindingName(username, DEFAULT_BINDING_SUFFIX),
       roleRef: { apiGroup: RBAC_API_GROUP, kind: 'ClusterRole', name: DEFAULT_CLUSTER_ROLE },
@@ -143,17 +143,105 @@ export class IamManager implements IamApi {
     });
   }
 
+  async createRoleForUser(request: CreateRoleForUserRequest): Promise<void> {
+    this.telemetryLogger.logUsage('createRoleForUser');
+    const username = this.checkedUsername(request.username);
+    const name = request.name.trim();
+    const namespace = request.namespace.trim();
+    if (!isValidResourceName(name)) {
+      throw new Error(`Invalid role name: ${request.name}`);
+    }
+    if (!isValidNamespaceName(namespace)) {
+      throw new Error(`Invalid namespace: ${request.namespace}`);
+    }
+    // The role and its binding share the name, so both have to be free: applying over an
+    // existing role would drop the rules it holds.
+    const taken =
+      this.dashboardStatesManager.getRoles().roles.some(r => r.namespace === namespace && r.name === name) ||
+      this.dashboardStatesManager
+        .getRoleBindings()
+        .roleBindings.some(rb => rb.namespace === namespace && rb.name === name);
+    if (taken) {
+      throw new Error(`A role or role binding named ${name} already exists in namespace ${namespace}`);
+    }
+
+    await this.applyManifests([
+      {
+        apiVersion: `${RBAC_API_GROUP}/v1`,
+        kind: 'Role',
+        metadata: { name, namespace },
+        rules: [],
+      },
+      {
+        apiVersion: `${RBAC_API_GROUP}/v1`,
+        kind: 'RoleBinding',
+        metadata: { name, namespace },
+        roleRef: { apiGroup: RBAC_API_GROUP, kind: 'Role', name },
+        subjects: [{ apiGroup: RBAC_API_GROUP, kind: 'User', name: username }],
+      },
+    ]);
+  }
+
+  async createClusterRoleForUser(request: CreateClusterRoleForUserRequest): Promise<void> {
+    this.telemetryLogger.logUsage('createClusterRoleForUser');
+    const username = this.checkedUsername(request.username);
+    const name = request.name.trim();
+    if (!isValidResourceName(name)) {
+      throw new Error(`Invalid cluster role name: ${request.name}`);
+    }
+    const taken =
+      this.dashboardStatesManager.getClusterRoles().clusterRoles.some(r => r.name === name) ||
+      this.dashboardStatesManager.getClusterRoleBindings().clusterRoleBindings.some(crb => crb.name === name);
+    if (taken) {
+      throw new Error(`A cluster role or cluster role binding named ${name} already exists`);
+    }
+
+    await this.applyManifests([
+      {
+        apiVersion: `${RBAC_API_GROUP}/v1`,
+        kind: 'ClusterRole',
+        metadata: { name },
+        rules: [],
+      },
+      {
+        apiVersion: `${RBAC_API_GROUP}/v1`,
+        kind: 'ClusterRoleBinding',
+        metadata: { name },
+        roleRef: { apiGroup: RBAC_API_GROUP, kind: 'ClusterRole', name },
+        subjects: [{ apiGroup: RBAC_API_GROUP, kind: 'User', name: username }],
+      },
+    ]);
+  }
+
+  private checkedUsername(username: string): string {
+    const trimmed = username.trim();
+    if (!isValidUsername(trimmed)) {
+      throw new Error(`Invalid user name: ${username}`);
+    }
+    return trimmed;
+  }
+
   private async applyClusterRoleBinding(request: CreateClusterRoleBindingRequest): Promise<void> {
-    // Built through the YAML serializer rather than a template so that user names needing
-    // quoting or escaping cannot alter the shape of the document.
-    const manifest = stringify({
-      apiVersion: `${RBAC_API_GROUP}/v1`,
-      kind: 'ClusterRoleBinding',
-      metadata: { name: request.name },
-      roleRef: request.roleRef,
-      subjects: request.subjects,
-    });
-    await this.getApi().patchResources(manifest, {
+    await this.applyManifests([
+      {
+        apiVersion: `${RBAC_API_GROUP}/v1`,
+        kind: 'ClusterRoleBinding',
+        metadata: { name: request.name },
+        roleRef: request.roleRef,
+        subjects: request.subjects,
+      },
+    ]);
+  }
+
+  /**
+   * Applies the manifests as a single server-side apply request.
+   *
+   * They are built through the YAML serializer rather than a template so that user names
+   * needing quoting or escaping cannot alter the shape of the documents.
+   */
+  private async applyManifests(manifests: object[]): Promise<void> {
+    const documents = manifests.map(manifest => stringify(manifest)).join('---\n');
+    await this.getApi().patchResources(documents, {
       strategy: 'server-side-apply',
       fieldManager: 'kubernetes-iam',
     });

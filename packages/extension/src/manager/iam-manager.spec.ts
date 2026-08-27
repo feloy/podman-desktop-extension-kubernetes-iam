@@ -25,7 +25,7 @@ import type { RpcExtension } from '@kubernetes-iam/rpc';
 import type { Container } from 'inversify';
 import { InversifyBinding } from '/@/inject/inversify-binding';
 import type { KubernetesDashboardExtensionApi, contexts } from '@podman-desktop/kubernetes-dashboard-extension-api';
-import { parse } from 'yaml';
+import { parse, parseAllDocuments } from 'yaml';
 
 let container: Container;
 let manager: IamManager;
@@ -48,6 +48,13 @@ function appliedManifest(): Record<string, unknown> {
   expect(mockApi.patchResources).toHaveBeenCalledOnce();
   const [yaml] = vi.mocked(mockApi.patchResources).mock.calls[0];
   return parse(yaml) as Record<string, unknown>;
+}
+
+/** The manifests of the single, possibly multi-document, call made so far. */
+function appliedManifests(): Record<string, unknown>[] {
+  expect(mockApi.patchResources).toHaveBeenCalledOnce();
+  const [yaml] = vi.mocked(mockApi.patchResources).mock.calls[0];
+  return parseAllDocuments(yaml).map(document => document.toJS() as Record<string, unknown>);
 }
 
 beforeEach(async () => {
@@ -242,4 +249,146 @@ test('getUserDetails logs telemetry and returns user details with roles', async 
     namespace: 'default',
     rules: [],
   });
+});
+
+test('createRoleForUser applies an empty role bound to the user', async () => {
+  await manager.createRoleForUser({ username: 'alice', namespace: 'default', name: 'pod-reader' });
+
+  expect(telemetryLoggerMock.logUsage).toHaveBeenCalledWith('createRoleForUser');
+  expect(mockApi.patchResources).toHaveBeenCalledWith(expect.any(String), {
+    strategy: 'server-side-apply',
+    fieldManager: 'kubernetes-iam',
+  });
+  expect(appliedManifests()).toEqual([
+    {
+      apiVersion: 'rbac.authorization.k8s.io/v1',
+      kind: 'Role',
+      metadata: { name: 'pod-reader', namespace: 'default' },
+      rules: [],
+    },
+    {
+      apiVersion: 'rbac.authorization.k8s.io/v1',
+      kind: 'RoleBinding',
+      metadata: { name: 'pod-reader', namespace: 'default' },
+      roleRef: { apiGroup: 'rbac.authorization.k8s.io', kind: 'Role', name: 'pod-reader' },
+      subjects: [{ apiGroup: 'rbac.authorization.k8s.io', kind: 'User', name: 'alice' }],
+    },
+  ]);
+});
+
+test('createRoleForUser rejects a name already taken by a role in the namespace', async () => {
+  container.get(DashboardStatesManager).setRoles({
+    roles: [{ namespace: 'default', name: 'pod-reader', rules: [] }],
+  });
+
+  await expect(
+    manager.createRoleForUser({ username: 'alice', namespace: 'default', name: 'pod-reader' }),
+  ).rejects.toThrow('A role or role binding named pod-reader already exists in namespace default');
+  expect(mockApi.patchResources).not.toHaveBeenCalled();
+});
+
+test('createRoleForUser rejects a name already taken by a role binding in the namespace', async () => {
+  container.get(DashboardStatesManager).setRoleBindings({
+    roleBindings: [
+      {
+        namespace: 'default',
+        name: 'pod-reader',
+        roleRef: { apiGroup: 'rbac.authorization.k8s.io', kind: 'Role', name: 'other' },
+        subjects: [],
+      },
+    ],
+  });
+
+  await expect(
+    manager.createRoleForUser({ username: 'alice', namespace: 'default', name: 'pod-reader' }),
+  ).rejects.toThrow('already exists in namespace default');
+  expect(mockApi.patchResources).not.toHaveBeenCalled();
+});
+
+test('createRoleForUser accepts a name taken in another namespace', async () => {
+  container.get(DashboardStatesManager).setRoles({
+    roles: [{ namespace: 'other', name: 'pod-reader', rules: [] }],
+  });
+
+  await manager.createRoleForUser({ username: 'alice', namespace: 'default', name: 'pod-reader' });
+
+  expect(mockApi.patchResources).toHaveBeenCalledOnce();
+});
+
+test.each([
+  {
+    field: 'name',
+    request: { username: 'alice', namespace: 'default', name: 'Pod Reader' },
+    error: 'Invalid role name',
+  },
+  {
+    field: 'namespace',
+    request: { username: 'alice', namespace: 'Not A NS', name: 'pod-reader' },
+    error: 'Invalid namespace',
+  },
+  {
+    field: 'user name',
+    request: { username: '../bad', namespace: 'default', name: 'pod-reader' },
+    error: 'Invalid user name',
+  },
+])('createRoleForUser rejects an invalid $field without writing', async ({ request, error }) => {
+  await expect(manager.createRoleForUser(request)).rejects.toThrow(error);
+  expect(mockApi.patchResources).not.toHaveBeenCalled();
+});
+
+test('createClusterRoleForUser applies an empty cluster role bound to the user', async () => {
+  await manager.createClusterRoleForUser({ username: 'alice', name: 'node-reader' });
+
+  expect(telemetryLoggerMock.logUsage).toHaveBeenCalledWith('createClusterRoleForUser');
+  expect(appliedManifests()).toEqual([
+    {
+      apiVersion: 'rbac.authorization.k8s.io/v1',
+      kind: 'ClusterRole',
+      metadata: { name: 'node-reader' },
+      rules: [],
+    },
+    {
+      apiVersion: 'rbac.authorization.k8s.io/v1',
+      kind: 'ClusterRoleBinding',
+      metadata: { name: 'node-reader' },
+      roleRef: { apiGroup: 'rbac.authorization.k8s.io', kind: 'ClusterRole', name: 'node-reader' },
+      subjects: [{ apiGroup: 'rbac.authorization.k8s.io', kind: 'User', name: 'alice' }],
+    },
+  ]);
+});
+
+test('createClusterRoleForUser rejects a name already taken by a cluster role', async () => {
+  container.get(DashboardStatesManager).setClusterRoles({
+    clusterRoles: [{ name: 'node-reader', rules: [] }],
+  });
+
+  await expect(manager.createClusterRoleForUser({ username: 'alice', name: 'node-reader' })).rejects.toThrow(
+    'A cluster role or cluster role binding named node-reader already exists',
+  );
+  expect(mockApi.patchResources).not.toHaveBeenCalled();
+});
+
+test('createClusterRoleForUser rejects a name already taken by a cluster role binding', async () => {
+  container.get(DashboardStatesManager).setClusterRoleBindings({
+    clusterRoleBindings: [
+      {
+        name: 'node-reader',
+        roleRef: { apiGroup: 'rbac.authorization.k8s.io', kind: 'ClusterRole', name: 'other' },
+        subjects: [],
+      },
+    ],
+  });
+
+  await expect(manager.createClusterRoleForUser({ username: 'alice', name: 'node-reader' })).rejects.toThrow(
+    'already exists',
+  );
+  expect(mockApi.patchResources).not.toHaveBeenCalled();
+});
+
+test('createClusterRoleForUser trims the names before applying them', async () => {
+  await manager.createClusterRoleForUser({ username: '  alice  ', name: '  node-reader  ' });
+
+  const [clusterRole, binding] = appliedManifests();
+  expect(clusterRole.metadata).toEqual({ name: 'node-reader' });
+  expect(binding.subjects).toEqual([{ apiGroup: 'rbac.authorization.k8s.io', kind: 'User', name: 'alice' }]);
 });

@@ -5,12 +5,16 @@
 </style>
 
 <script lang="ts">
-import { Table, TableColumn, TableRow, TableSimpleColumn, DetailsPage } from '@podman-desktop/ui-svelte';
-import { getContext, onMount } from 'svelte';
+import { Table, TableColumn, TableRow, TableSimpleColumn, DetailsPage, Button } from '@podman-desktop/ui-svelte';
+import { faPlusCircle } from '@fortawesome/free-solid-svg-icons';
+import { getContext, onDestroy, onMount } from 'svelte';
+import type { Unsubscriber } from 'svelte/store';
 import { router } from 'tinro';
 import type { UserDetailsData, IamApi } from '@kubernetes-iam/channels';
 import { API_IAM } from '@kubernetes-iam/channels';
 import { Remote } from '/@/remote/remote';
+import { States } from '/@/state/states';
+import CreateRoleForUserDialog from './users/CreateRoleForUserDialog.svelte';
 
 interface RoleRowUI {
   selected?: boolean;
@@ -27,21 +31,64 @@ interface Props {
 
 const { name }: Props = $props();
 const remote = getContext<Remote>(Remote);
+const states = getContext<States>(States);
 
 let details: UserDetailsData | undefined = $state(undefined);
 let loading = $state(true);
 let error: string | undefined = $state(undefined);
+let roleDialogKind: 'Role' | 'ClusterRole' | undefined = $state(undefined);
 
-onMount(async () => {
-  try {
-    const iamApi = remote.getProxy<IamApi>(API_IAM);
-    details = await iamApi.getUserDetails({ userName: name });
-  } catch (e: unknown) {
-    error = e instanceof Error ? e.message : String(e);
-  } finally {
-    loading = false;
+let subscribers: Unsubscriber[] = [];
+
+onMount(() => {
+  subscribers.push(states.stateRolesData.subscribe());
+  subscribers.push(states.stateClusterRolesData.subscribe());
+  subscribers.push(states.stateRoleBindingsData.subscribe());
+  subscribers.push(states.stateClusterRoleBindingsData.subscribe());
+});
+
+onDestroy(() => {
+  for (const subscriber of subscribers) {
+    subscriber();
+  }
+  subscribers = [];
+});
+
+const rbacData = $derived({
+  roles: states.stateRolesData.data,
+  clusterRoles: states.stateClusterRolesData.data,
+  roleBindings: states.stateRoleBindingsData.data,
+  clusterRoleBindings: states.stateClusterRoleBindingsData.data,
+});
+
+$effect(() => {
+  // The extension computes the details from these four resources, so any change to them
+  // is a reason to read the details again: this is what makes a role added from this page
+  // appear once the cluster reports it.
+  if (rbacData) {
+    loadDetails().catch(console.error);
   }
 });
+
+/** Discriminates the response of the latest read from those of the reads it superseded. */
+let latestRead = 0;
+
+async function loadDetails(): Promise<void> {
+  const read = ++latestRead;
+  try {
+    const loaded = await remote.getProxy<IamApi>(API_IAM).getUserDetails({ userName: name });
+    if (read !== latestRead) return;
+    details = loaded;
+    error = undefined;
+  } catch (e: unknown) {
+    if (read !== latestRead) return;
+    error = e instanceof Error ? e.message : String(e);
+  } finally {
+    if (read === latestRead) {
+      loading = false;
+    }
+  }
+}
 
 function toUI(d: UserDetailsData | undefined): RoleRowUI[] {
   if (!d) return [];
@@ -102,6 +149,14 @@ function goBack(): void {
   breadcrumbRightPart={name}
   onclose={goBack}
   onbreadcrumbClick={goBack}>
+  {#snippet actionsSnippet()}
+    <div class="flex flex-row gap-2">
+      <Button icon={faPlusCircle} onclick={(): 'Role' => (roleDialogKind = 'Role')}>Add role</Button>
+      <Button icon={faPlusCircle} onclick={(): 'ClusterRole' => (roleDialogKind = 'ClusterRole')}>
+        Add cluster role
+      </Button>
+    </div>
+  {/snippet}
   {#snippet contentSnippet()}
     <div class="flex flex-col h-full gap-4 py-4 bg-(--pd-content-bg)">
       <div class="text-sm text-(--pd-content-text) px-5">
@@ -123,3 +178,10 @@ function goBack(): void {
     </div>
   {/snippet}
 </DetailsPage>
+
+{#if roleDialogKind}
+  <CreateRoleForUserDialog
+    username={name}
+    clusterScoped={roleDialogKind === 'ClusterRole'}
+    onclose={(): undefined => (roleDialogKind = undefined)} />
+{/if}
