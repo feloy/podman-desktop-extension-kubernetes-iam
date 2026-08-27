@@ -49,6 +49,17 @@ export interface CreateUserRequest {
   username: string;
 }
 
+export interface CreateRoleForUserRequest {
+  username: string;
+  namespace: string;
+  name: string;
+}
+
+export interface CreateClusterRoleForUserRequest {
+  username: string;
+  name: string;
+}
+
 export interface GenerateKubeconfigRequest {
   username: string;
   expirationSeconds?: number;
@@ -86,6 +97,18 @@ export interface IamApi {
    * granted any privilege it would not otherwise have.
    */
   createUser(request: CreateUserRequest): Promise<void>;
+
+  /**
+   * Creates an empty Role in `namespace` and a RoleBinding granting it to the user. The
+   * role holds no rule, so the user gains nothing until rules are added to it.
+   */
+  createRoleForUser(request: CreateRoleForUserRequest): Promise<void>;
+
+  /**
+   * Cluster-wide counterpart of {@link createRoleForUser}: creates an empty ClusterRole
+   * and a ClusterRoleBinding granting it to the user.
+   */
+  createClusterRoleForUser(request: CreateClusterRoleForUserRequest): Promise<void>;
 
   generateKubeconfig(request: GenerateKubeconfigRequest): Promise<void>;
 
