@@ -35,7 +35,20 @@ interface KubeconfigFile {
   [key: string]: unknown;
 }
 
-const DEFAULT_EXPIRATION_SECONDS = 86400;
+const SECONDS_PER_DAY = 86_400;
+
+/**
+ * Lifetime requested for the generated client certificate.
+ *
+ * kubeadm issues its own admin certificate for a year, so clusters provisioned
+ * with kind or minikube hand out year-long credentials. Matching that avoids
+ * forcing a daily regeneration during local development.
+ */
+const DEFAULT_EXPIRATION_SECONDS = 365 * SECONDS_PER_DAY;
+
+/** Kubernetes rejects a CertificateSigningRequest asking for less than 10 minutes. */
+const MIN_EXPIRATION_SECONDS = 600;
+
 const CERTIFICATE_WAIT_TIMEOUT_MS = 30_000;
 
 @injectable()
@@ -51,7 +64,7 @@ export class KubeconfigGenerator {
       throw new Error(`Invalid username: ${username}`);
     }
 
-    const expiration = expirationSeconds ?? DEFAULT_EXPIRATION_SECONDS;
+    const expiration = this.resolveExpirationSeconds(expirationSeconds);
     const api = this.getApi();
     let tempDir: string | undefined;
 
@@ -84,6 +97,22 @@ export class KubeconfigGenerator {
         await rm(tempDir, { recursive: true, force: true }).catch(() => {});
       }
     }
+  }
+
+  /**
+   * Lifetime to request for the certificate, in seconds.
+   *
+   * The caller-supplied value wins over the default. A user-facing
+   * `contributes.configuration` setting would be read here as the fallback,
+   * in place of the constant; the bounds below already guard against a value
+   * the signer would reject.
+   */
+  private resolveExpirationSeconds(requested?: number): number {
+    const value = requested ?? DEFAULT_EXPIRATION_SECONDS;
+    if (!Number.isFinite(value)) {
+      return DEFAULT_EXPIRATION_SECONDS;
+    }
+    return Math.max(MIN_EXPIRATION_SECONDS, Math.floor(value));
   }
 
   private async checkPrerequisites(): Promise<void> {

@@ -18,7 +18,7 @@ For a given user, the extension can issue a client certificate and register it a
 2. A `CertificateSigningRequest` is created in the cluster, approved, and then deleted once the certificate has been issued.
 3. A new user entry and a new context (named after the current context and the user) are appended to the kubeconfig file currently used by Podman Desktop. The existing contexts are left untouched.
 
-The issued certificate is valid for 24 hours by default.
+The issued certificate is valid for one year by default.
 
 This requires the `openssl` command to be available on your machine, and a cluster user allowed to create and approve `CertificateSigningRequest` resources.
 
