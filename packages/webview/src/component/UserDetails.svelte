@@ -16,8 +16,8 @@ import { Remote } from '/@/remote/remote';
 import { States } from '/@/state/states';
 import CreateRoleForUserDialog from './users/CreateRoleForUserDialog.svelte';
 import AddRuleDialog from './users/AddRuleDialog.svelte';
-import AddRuleAction from './users/AddRuleAction.svelte';
-import type { RoleRef, RoleRowUI } from './users/RoleRowUI';
+import RoleActions from './users/RoleActions.svelte';
+import type { BindingRef, RoleRef, RoleRowUI } from './users/RoleRowUI';
 
 interface Props {
   name: string;
@@ -85,11 +85,26 @@ async function loadDetails(): Promise<void> {
   }
 }
 
+/**
+ * Revokes from the user the role a binding grants it. The extension asks the operator to
+ * confirm first, and reports a failure through the dashboard, so there is nothing to
+ * display here.
+ */
+async function revoke(binding: BindingRef): Promise<void> {
+  await remote.getProxy<IamApi>(API_IAM).revokeRoleFromUser({
+    username: name,
+    bindingKind: binding.kind,
+    bindingName: binding.name,
+    namespace: binding.namespace,
+  });
+}
+
 function toUI(d: UserDetailsData | undefined): RoleRowUI[] {
   if (!d) return [];
   return d.roles.map(r => {
     // A rule is added to the role itself, which a namespace tells apart from a cluster role.
     const role: RoleRef = { kind: r.roleKind, name: r.roleName, namespace: r.namespace };
+    const binding: BindingRef = { kind: r.bindingKind, name: r.bindingName, namespace: r.namespace };
     return {
       name: r.roleName,
       col2: r.roleKind,
@@ -97,6 +112,9 @@ function toUI(d: UserDetailsData | undefined): RoleRowUI[] {
       col4: r.namespace ?? 'Cluster-wide',
       role,
       onAddRule: (): RoleRef => (ruleDialogRole = role),
+      onRevoke: (): void => {
+        revoke(binding).catch(console.error);
+      },
       children: r.rules.map(rule => ({
         name: rule.apiGroups.map(g => (g === '' ? 'core' : g)).join(', ') || '*',
         col2: rule.resources.join(', ') || '*',
@@ -136,7 +154,7 @@ const scopeColumn = new TableColumn<RoleRowUI, string>('Scope / Res. Names', {
 const actionsColumn = new TableColumn<RoleRowUI, RoleRowUI>('Actions', {
   align: 'right',
   renderMapping: (r): RoleRowUI => r,
-  renderer: AddRuleAction,
+  renderer: RoleActions,
   overflow: true,
 });
 

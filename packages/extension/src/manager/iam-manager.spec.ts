@@ -22,9 +22,11 @@ import { DashboardStatesManager } from './dashboard-states-manager';
 import { DashboardApiManager } from './dashboard-api-manager';
 import type { ExtensionContext, TelemetryLogger } from '@podman-desktop/api';
 import type { RpcExtension } from '@kubernetes-iam/rpc';
+import type { SubjectInfo } from '@kubernetes-iam/channels';
 import type { Container } from 'inversify';
 import { InversifyBinding } from '/@/inject/inversify-binding';
 import type { KubernetesDashboardExtensionApi, contexts } from '@podman-desktop/kubernetes-dashboard-extension-api';
+import { window } from '@podman-desktop/api';
 import { parse, parseAllDocuments } from 'yaml';
 
 let container: Container;
@@ -55,6 +57,53 @@ function appliedManifests(): Record<string, unknown>[] {
   expect(mockApi.patchResources).toHaveBeenCalledOnce();
   const [yaml] = vi.mocked(mockApi.patchResources).mock.calls[0];
   return parseAllDocuments(yaml).map(document => document.toJS() as Record<string, unknown>);
+}
+
+const ALICE: SubjectInfo = { apiGroup: 'rbac.authorization.k8s.io', kind: 'User', name: 'alice' };
+
+/** A RoleBinding granting a role holding one rule, in namespace `default`. */
+function seedRoleBinding(subjects: SubjectInfo[] = [ALICE]): void {
+  const statesManager = container.get(DashboardStatesManager);
+  statesManager.setRoles({
+    roles: [
+      { namespace: 'default', name: 'pod-reader', rules: [{ apiGroups: [''], resources: ['pods'], verbs: ['get'] }] },
+    ],
+  });
+  statesManager.setRoleBindings({
+    roleBindings: [
+      {
+        namespace: 'default',
+        name: 'binding1',
+        roleRef: { apiGroup: 'rbac.authorization.k8s.io', kind: 'Role', name: 'pod-reader' },
+        subjects,
+      },
+    ],
+  });
+}
+
+/** A ClusterRoleBinding granting a cluster role holding two rules. */
+function seedClusterRoleBinding(subjects: SubjectInfo[] = [ALICE]): void {
+  const statesManager = container.get(DashboardStatesManager);
+  statesManager.setClusterRoles({
+    clusterRoles: [
+      {
+        name: 'node-reader',
+        rules: [
+          { apiGroups: [''], resources: ['nodes'], verbs: ['get'] },
+          { apiGroups: [''], resources: ['nodes'], verbs: ['list'] },
+        ],
+      },
+    ],
+  });
+  statesManager.setClusterRoleBindings({
+    clusterRoleBindings: [
+      {
+        name: 'cluster-binding1',
+        roleRef: { apiGroup: 'rbac.authorization.k8s.io', kind: 'ClusterRole', name: 'node-reader' },
+        subjects,
+      },
+    ],
+  });
 }
 
 beforeEach(async () => {
@@ -523,4 +572,411 @@ test('addRuleToClusterRole rejects a cluster role it does not know about', async
     }),
   ).rejects.toThrow('No cluster role named node-reader');
   expect(mockApi.patchResources).not.toHaveBeenCalled();
+});
+const BOB: SubjectInfo = { apiGroup: 'rbac.authorization.k8s.io', kind: 'User', name: 'bob' };
+const DEVS: SubjectInfo = { apiGroup: 'rbac.authorization.k8s.io', kind: 'Group', name: 'devs' };
+const CI: SubjectInfo = { kind: 'ServiceAccount', name: 'ci', namespace: 'build' };
+
+/** The single confirmation message shown so far. */
+function confirmationMessage(): string {
+  expect(window.showWarningMessage).toHaveBeenCalledOnce();
+  return vi.mocked(window.showWarningMessage).mock.calls[0][0];
+}
+
+test('revokeRoleFromUser deletes the binding when the user is its only subject', async () => {
+  seedRoleBinding();
+  vi.mocked(window.showWarningMessage).mockResolvedValue('Revoke');
+
+  await manager.revokeRoleFromUser({
+    username: 'alice',
+    bindingKind: 'RoleBinding',
+    bindingName: 'binding1',
+    namespace: 'default',
+  });
+
+  expect(telemetryLoggerMock.logUsage).toHaveBeenCalledWith('revokeRoleFromUser');
+  expect(mockApi.deleteResource).toHaveBeenCalledExactlyOnceWith('RoleBinding', 'binding1', 'default');
+  expect(mockApi.patchResources).not.toHaveBeenCalled();
+});
+
+test('revokeRoleFromUser deletes a cluster role binding whose only subject is the user', async () => {
+  seedClusterRoleBinding();
+  vi.mocked(window.showWarningMessage).mockResolvedValue('Revoke');
+
+  await manager.revokeRoleFromUser({
+    username: 'alice',
+    bindingKind: 'ClusterRoleBinding',
+    bindingName: 'cluster-binding1',
+  });
+
+  expect(mockApi.deleteResource).toHaveBeenCalledExactlyOnceWith('ClusterRoleBinding', 'cluster-binding1', undefined);
+});
+
+test('revokeRoleFromUser only drops the subject of the user when the binding has others', async () => {
+  seedRoleBinding([ALICE, BOB, DEVS]);
+  vi.mocked(window.showWarningMessage).mockResolvedValue('Revoke');
+
+  await manager.revokeRoleFromUser({
+    username: 'alice',
+    bindingKind: 'RoleBinding',
+    bindingName: 'binding1',
+    namespace: 'default',
+  });
+
+  expect(mockApi.deleteResource).not.toHaveBeenCalled();
+  expect(appliedManifest()).toEqual({
+    apiVersion: 'rbac.authorization.k8s.io/v1',
+    kind: 'RoleBinding',
+    metadata: { name: 'binding1', namespace: 'default' },
+    subjects: [BOB, DEVS],
+  });
+});
+
+test('revokeRoleFromUser keeps a cluster role binding carrying other subjects', async () => {
+  seedClusterRoleBinding([ALICE, BOB]);
+  vi.mocked(window.showWarningMessage).mockResolvedValue('Revoke');
+
+  await manager.revokeRoleFromUser({
+    username: 'alice',
+    bindingKind: 'ClusterRoleBinding',
+    bindingName: 'cluster-binding1',
+  });
+
+  expect(mockApi.deleteResource).not.toHaveBeenCalled();
+  expect(appliedManifest()).toEqual({
+    apiVersion: 'rbac.authorization.k8s.io/v1',
+    kind: 'ClusterRoleBinding',
+    metadata: { name: 'cluster-binding1' },
+    subjects: [BOB],
+  });
+});
+
+test('revokeRoleFromUser names the role and its number of rules in the confirmation', async () => {
+  seedRoleBinding();
+  vi.mocked(window.showWarningMessage).mockResolvedValue('Revoke');
+
+  await manager.revokeRoleFromUser({
+    username: 'alice',
+    bindingKind: 'RoleBinding',
+    bindingName: 'binding1',
+    namespace: 'default',
+  });
+
+  expect(confirmationMessage()).toContain('role pod-reader');
+  expect(confirmationMessage()).toContain('1 rule');
+});
+
+test('revokeRoleFromUser names the cluster role and its number of rules in the confirmation', async () => {
+  seedClusterRoleBinding();
+  vi.mocked(window.showWarningMessage).mockResolvedValue('Revoke');
+
+  await manager.revokeRoleFromUser({
+    username: 'alice',
+    bindingKind: 'ClusterRoleBinding',
+    bindingName: 'cluster-binding1',
+  });
+
+  expect(confirmationMessage()).toContain('cluster role node-reader');
+  expect(confirmationMessage()).toContain('2 rules');
+});
+
+test('revokeRoleFromUser tells which subjects keep the role, qualifying groups and service accounts', async () => {
+  seedRoleBinding([ALICE, BOB, DEVS, CI]);
+  vi.mocked(window.showWarningMessage).mockResolvedValue('Revoke');
+
+  await manager.revokeRoleFromUser({
+    username: 'alice',
+    bindingKind: 'RoleBinding',
+    bindingName: 'binding1',
+    namespace: 'default',
+  });
+
+  expect(confirmationMessage()).toContain('and stays granted to bob, the group devs and the service account build/ci.');
+});
+
+test('revokeRoleFromUser says nothing about other subjects when the binding only holds the user', async () => {
+  seedRoleBinding();
+  vi.mocked(window.showWarningMessage).mockResolvedValue('Revoke');
+
+  await manager.revokeRoleFromUser({
+    username: 'alice',
+    bindingKind: 'RoleBinding',
+    bindingName: 'binding1',
+    namespace: 'default',
+  });
+
+  expect(confirmationMessage()).not.toContain('stays granted');
+});
+
+test.each([{ answer: 'Cancel' }, { answer: undefined }])(
+  'revokeRoleFromUser changes nothing when the confirmation answers $answer',
+  async ({ answer }) => {
+    seedRoleBinding([ALICE, BOB]);
+    vi.mocked(window.showWarningMessage).mockResolvedValue(answer);
+
+    await manager.revokeRoleFromUser({
+      username: 'alice',
+      bindingKind: 'RoleBinding',
+      bindingName: 'binding1',
+      namespace: 'default',
+    });
+
+    expect(mockApi.deleteResource).not.toHaveBeenCalled();
+    expect(mockApi.patchResources).not.toHaveBeenCalled();
+  },
+);
+
+test('revokeRoleFromUser confirms even when the role the binding grants is unknown to the cluster', async () => {
+  container.get(DashboardStatesManager).setRoleBindings({
+    roleBindings: [
+      {
+        namespace: 'default',
+        name: 'binding1',
+        roleRef: { apiGroup: 'rbac.authorization.k8s.io', kind: 'Role', name: 'gone' },
+        subjects: [ALICE],
+      },
+    ],
+  });
+  vi.mocked(window.showWarningMessage).mockResolvedValue('Revoke');
+
+  await manager.revokeRoleFromUser({
+    username: 'alice',
+    bindingKind: 'RoleBinding',
+    bindingName: 'binding1',
+    namespace: 'default',
+  });
+
+  expect(confirmationMessage()).toContain('unknown rules');
+  expect(mockApi.deleteResource).toHaveBeenCalledExactlyOnceWith('RoleBinding', 'binding1', 'default');
+});
+
+test('revokeRoleFromUser rejects a binding it does not know about', async () => {
+  await expect(
+    manager.revokeRoleFromUser({
+      username: 'alice',
+      bindingKind: 'RoleBinding',
+      bindingName: 'binding1',
+      namespace: 'default',
+    }),
+  ).rejects.toThrow('No RoleBinding named binding1 in namespace default');
+  expect(window.showWarningMessage).not.toHaveBeenCalled();
+});
+
+test('revokeRoleFromUser rejects a binding that does not grant its role to the user', async () => {
+  seedRoleBinding([BOB]);
+
+  await expect(
+    manager.revokeRoleFromUser({
+      username: 'alice',
+      bindingKind: 'RoleBinding',
+      bindingName: 'binding1',
+      namespace: 'default',
+    }),
+  ).rejects.toThrow('The binding binding1 does not grant its role to alice');
+  expect(window.showWarningMessage).not.toHaveBeenCalled();
+  expect(mockApi.deleteResource).not.toHaveBeenCalled();
+});
+
+test('revokeRoleFromUser keeps a group of the same name as the user', async () => {
+  seedRoleBinding([ALICE, { apiGroup: 'rbac.authorization.k8s.io', kind: 'Group', name: 'alice' }]);
+  vi.mocked(window.showWarningMessage).mockResolvedValue('Revoke');
+
+  await manager.revokeRoleFromUser({
+    username: 'alice',
+    bindingKind: 'RoleBinding',
+    bindingName: 'binding1',
+    namespace: 'default',
+  });
+
+  expect(appliedManifest().subjects).toEqual([{ apiGroup: 'rbac.authorization.k8s.io', kind: 'Group', name: 'alice' }]);
+});
+
+test('revokeRoleFromUser patches the subjects instead of applying them', async () => {
+  // A server-side apply would claim the whole subjects list, which the API server refuses
+  // while another field manager holds it, as it does for a binding written with kubectl.
+  seedRoleBinding([ALICE, BOB]);
+  vi.mocked(window.showWarningMessage).mockResolvedValue('Revoke');
+
+  await manager.revokeRoleFromUser({
+    username: 'alice',
+    bindingKind: 'RoleBinding',
+    bindingName: 'binding1',
+    namespace: 'default',
+  });
+
+  expect(mockApi.patchResources).toHaveBeenCalledOnce();
+  expect(vi.mocked(mockApi.patchResources).mock.calls[0][1]).toEqual({
+    strategy: 'merge-patch',
+    fieldManager: 'kubernetes-iam',
+  });
+});
+
+test('revokeRoleFromUser offers to delete the role no other binding grants', async () => {
+  seedRoleBinding();
+  vi.mocked(window.showWarningMessage).mockResolvedValue('Revoke');
+
+  await manager.revokeRoleFromUser({
+    username: 'alice',
+    bindingKind: 'RoleBinding',
+    bindingName: 'binding1',
+    namespace: 'default',
+  });
+
+  expect(confirmationMessage()).toContain('Nothing else grants the role');
+  expect(vi.mocked(window.showWarningMessage).mock.calls[0].slice(1)).toEqual(['Cancel', 'Revoke', 'Delete']);
+});
+
+test('revokeRoleFromUser deletes the role along with the binding on Delete', async () => {
+  seedRoleBinding();
+  vi.mocked(window.showWarningMessage).mockResolvedValue('Delete');
+
+  await manager.revokeRoleFromUser({
+    username: 'alice',
+    bindingKind: 'RoleBinding',
+    bindingName: 'binding1',
+    namespace: 'default',
+  });
+
+  expect(mockApi.deleteResource).toHaveBeenNthCalledWith(1, 'RoleBinding', 'binding1', 'default');
+  expect(mockApi.deleteResource).toHaveBeenNthCalledWith(2, 'Role', 'pod-reader', 'default');
+});
+
+test('revokeRoleFromUser deletes a cluster role without a namespace on Delete', async () => {
+  seedClusterRoleBinding();
+  vi.mocked(window.showWarningMessage).mockResolvedValue('Delete');
+
+  await manager.revokeRoleFromUser({
+    username: 'alice',
+    bindingKind: 'ClusterRoleBinding',
+    bindingName: 'cluster-binding1',
+  });
+
+  expect(mockApi.deleteResource).toHaveBeenNthCalledWith(1, 'ClusterRoleBinding', 'cluster-binding1', undefined);
+  expect(mockApi.deleteResource).toHaveBeenNthCalledWith(2, 'ClusterRole', 'node-reader', undefined);
+});
+
+test('revokeRoleFromUser leaves the role in place on Revoke', async () => {
+  seedRoleBinding();
+  vi.mocked(window.showWarningMessage).mockResolvedValue('Revoke');
+
+  await manager.revokeRoleFromUser({
+    username: 'alice',
+    bindingKind: 'RoleBinding',
+    bindingName: 'binding1',
+    namespace: 'default',
+  });
+
+  expect(mockApi.deleteResource).toHaveBeenCalledExactlyOnceWith('RoleBinding', 'binding1', 'default');
+});
+
+test('revokeRoleFromUser does not offer to delete a role another binding still grants', async () => {
+  seedRoleBinding();
+  const statesManager = container.get(DashboardStatesManager);
+  statesManager.setRoleBindings({
+    roleBindings: [
+      ...statesManager.getRoleBindings().roleBindings,
+      {
+        namespace: 'default',
+        name: 'binding2',
+        roleRef: { apiGroup: 'rbac.authorization.k8s.io', kind: 'Role', name: 'pod-reader' },
+        subjects: [BOB],
+      },
+    ],
+  });
+  vi.mocked(window.showWarningMessage).mockResolvedValue('Revoke');
+
+  await manager.revokeRoleFromUser({
+    username: 'alice',
+    bindingKind: 'RoleBinding',
+    bindingName: 'binding1',
+    namespace: 'default',
+  });
+
+  expect(confirmationMessage()).toContain('The role itself is left in place.');
+  expect(vi.mocked(window.showWarningMessage).mock.calls[0].slice(1)).toEqual(['Cancel', 'Revoke']);
+});
+
+test('revokeRoleFromUser ignores a binding of another namespace when looking for other grants', async () => {
+  seedRoleBinding();
+  const statesManager = container.get(DashboardStatesManager);
+  statesManager.setRoleBindings({
+    roleBindings: [
+      ...statesManager.getRoleBindings().roleBindings,
+      {
+        namespace: 'other',
+        name: 'binding2',
+        roleRef: { apiGroup: 'rbac.authorization.k8s.io', kind: 'Role', name: 'pod-reader' },
+        subjects: [BOB],
+      },
+    ],
+  });
+  vi.mocked(window.showWarningMessage).mockResolvedValue('Revoke');
+
+  await manager.revokeRoleFromUser({
+    username: 'alice',
+    bindingKind: 'RoleBinding',
+    bindingName: 'binding1',
+    namespace: 'default',
+  });
+
+  expect(confirmationMessage()).toContain('Nothing else grants the role');
+});
+
+test('revokeRoleFromUser counts a namespaced binding as a grant of a cluster role', async () => {
+  seedClusterRoleBinding();
+  container.get(DashboardStatesManager).setRoleBindings({
+    roleBindings: [
+      {
+        namespace: 'default',
+        name: 'binding2',
+        roleRef: { apiGroup: 'rbac.authorization.k8s.io', kind: 'ClusterRole', name: 'node-reader' },
+        subjects: [BOB],
+      },
+    ],
+  });
+  vi.mocked(window.showWarningMessage).mockResolvedValue('Revoke');
+
+  await manager.revokeRoleFromUser({
+    username: 'alice',
+    bindingKind: 'ClusterRoleBinding',
+    bindingName: 'cluster-binding1',
+  });
+
+  expect(vi.mocked(window.showWarningMessage).mock.calls[0].slice(1)).toEqual(['Cancel', 'Revoke']);
+});
+
+test('revokeRoleFromUser never offers to delete a built-in role', async () => {
+  container.get(DashboardStatesManager).setClusterRoleBindings({
+    clusterRoleBindings: [
+      {
+        name: 'alice-basic-user',
+        roleRef: { apiGroup: 'rbac.authorization.k8s.io', kind: 'ClusterRole', name: 'system:basic-user' },
+        subjects: [ALICE],
+      },
+    ],
+  });
+  vi.mocked(window.showWarningMessage).mockResolvedValue('Revoke');
+
+  await manager.revokeRoleFromUser({
+    username: 'alice',
+    bindingKind: 'ClusterRoleBinding',
+    bindingName: 'alice-basic-user',
+  });
+
+  expect(vi.mocked(window.showWarningMessage).mock.calls[0].slice(1)).toEqual(['Cancel', 'Revoke']);
+});
+
+test('revokeRoleFromUser does not offer to delete a role the binding keeps granting', async () => {
+  seedRoleBinding([ALICE, BOB]);
+  vi.mocked(window.showWarningMessage).mockResolvedValue('Revoke');
+
+  await manager.revokeRoleFromUser({
+    username: 'alice',
+    bindingKind: 'RoleBinding',
+    bindingName: 'binding1',
+    namespace: 'default',
+  });
+
+  expect(vi.mocked(window.showWarningMessage).mock.calls[0].slice(1)).toEqual(['Cancel', 'Revoke']);
+  expect(mockApi.deleteResource).not.toHaveBeenCalled();
 });

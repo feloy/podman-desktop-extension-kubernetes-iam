@@ -28,6 +28,14 @@ export interface RoleRef {
   namespace?: string;
 }
 
+/** The binding a role is granted to the user through, on the rows standing for a role. */
+export interface BindingRef {
+  kind: string;
+  name: string;
+  /** Only set when the binding is a RoleBinding, the namespaced kind of binding. */
+  namespace?: string;
+}
+
 /**
  * A row of the roles table of a user.
  *
@@ -41,7 +49,9 @@ export interface RoleRowUI {
   col3: string;
   col4: string;
   children?: RoleRowUI[];
-  /** Only set on the rows standing for a role, together with {@link onAddRule}. */
+  /** Only set on the rows standing for a role, together with the actions below. */
   role?: RoleRef;
   onAddRule?: () => void;
+  /** Deletes the binding granting the role to the user, leaving the role itself in place. */
+  onRevoke?: () => void;
 }

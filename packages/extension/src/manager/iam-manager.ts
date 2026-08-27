@@ -32,10 +32,16 @@ import type {
   GenerateKubeconfigRequest,
   GetUserDetailsRequest,
   UserDetailsData,
+  RoleRefInfo,
+  SubjectInfo,
+  RevokeRoleFromUserRequest,
+  RoleBindingInfo,
+  ClusterRoleBindingInfo,
 } from '@kubernetes-iam/channels';
 import type { KubernetesDashboardExtensionApi } from '@podman-desktop/kubernetes-dashboard-extension-api';
 import { TelemetryLoggerSymbol } from '/@/inject/symbol';
 import type { TelemetryLogger } from '@podman-desktop/api';
+import { window } from '@podman-desktop/api';
 import { DashboardApiManager } from '/@/manager/dashboard-api-manager';
 import { DashboardStatesManager } from '/@/manager/dashboard-states-manager';
 import { KubeconfigGenerator } from '/@/manager/kubeconfig-generator';
@@ -87,6 +93,39 @@ function checkedRule(rule: PolicyRuleInfo): PolicyRuleInfo {
     checked.resourceNames = resourceNames;
   }
   return checked;
+}
+
+/** What the operator answered to the confirmation of a revocation. */
+type RevocationChoice = 'cancel' | 'revoke' | 'delete-role';
+
+/**
+ * Names the subjects a binding still grants its role to, qualifying every kind but `User`
+ * so that a group or a service account is not read as a user.
+ */
+function joinSubjects(subjects: SubjectInfo[]): string {
+  const names = subjects.map(subject => {
+    if (subject.kind === 'Group') {
+      return `the group ${subject.name}`;
+    }
+    if (subject.kind === 'ServiceAccount') {
+      // A service account is namespaced, so its namespace is part of its identity.
+      const prefix = subject.namespace ? `${subject.namespace}/` : '';
+      return `the service account ${prefix}${subject.name}`;
+    }
+    return subject.name;
+  });
+  if (names.length === 1) {
+    return names[0] ?? '';
+  }
+  return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+}
+
+/** Names the rules a role holds, or says they are unknown when the role could not be read. */
+function describeRuleCount(ruleCount: number | undefined): string {
+  if (ruleCount === undefined) {
+    return 'unknown rules';
+  }
+  return ruleCount === 1 ? '1 rule' : `${ruleCount} rules`;
 }
 
 @injectable()
@@ -249,6 +288,81 @@ export class IamManager implements IamApi {
     ]);
   }
 
+  async revokeRoleFromUser(request: RevokeRoleFromUserRequest): Promise<void> {
+    this.telemetryLogger.logUsage('revokeRoleFromUser');
+    const username = this.checkedUsername(request.username);
+    const name = request.bindingName.trim();
+    if (!isValidResourceName(name)) {
+      throw new Error(`Invalid binding name: ${request.bindingName}`);
+    }
+    const clusterScoped = request.bindingKind === 'ClusterRoleBinding';
+    // A ClusterRoleBinding is cluster-wide, so only a RoleBinding is looked up by namespace.
+    const namespace = clusterScoped ? undefined : (request.namespace ?? '').trim();
+    if (namespace !== undefined && !isValidNamespaceName(namespace)) {
+      throw new Error(`Invalid namespace: ${request.namespace}`);
+    }
+    const binding = this.findBinding(request.bindingKind, name, namespace);
+    if (!binding) {
+      const where = namespace ? ` in namespace ${namespace}` : '';
+      throw new Error(`No ${request.bindingKind} named ${name}${where}`);
+    }
+
+    const remaining = binding.subjects.filter(subject => !(subject.kind === 'User' && subject.name === username));
+    if (remaining.length === binding.subjects.length) {
+      throw new Error(`The binding ${name} does not grant its role to ${username}`);
+    }
+    // Dropping the last subject would leave a binding granting the role to nobody, which
+    // Kubernetes accepts but nothing needs, so the binding goes with it — and the role it
+    // referenced may then be left with nothing granting it at all.
+    const deletesBinding = remaining.length === 0;
+    const orphansRole = deletesBinding && this.isRoleLeftUnused(binding.roleRef, request.bindingKind, name, namespace);
+
+    const choice = await this.confirmRevocation(binding.roleRef, remaining, namespace, orphansRole);
+    if (choice === 'cancel') {
+      return;
+    }
+
+    await this.keepSubjects(request.bindingKind, name, namespace, remaining);
+
+    if (choice === 'delete-role') {
+      await this.deleteRoleOfRef(binding.roleRef, namespace);
+    }
+  }
+
+  /**
+   * Reduces a binding to the given subjects, deleting it altogether when none is left: a
+   * binding granting its role to nobody is one Kubernetes accepts but nothing needs.
+   */
+  private async keepSubjects(
+    bindingKind: string,
+    name: string,
+    namespace: string | undefined,
+    subjects: SubjectInfo[],
+  ): Promise<void> {
+    if (subjects.length === 0) {
+      await this.getApi().deleteResource(bindingKind, name, namespace);
+      return;
+    }
+    // The subjects are patched as a whole, the remaining ones replacing the list, which is
+    // what drops the subject of the user. A server-side apply would instead claim the whole
+    // list for this extension's field manager, and the API server refuses that while another
+    // manager holds it, as it does for any binding written with kubectl. `roleRef` is left
+    // out: the patch does not change it, and it is immutable.
+    await this.patchManifest({
+      apiVersion: `${RBAC_API_GROUP}/v1`,
+      kind: bindingKind,
+      metadata: namespace === undefined ? { name } : { name, namespace },
+      subjects,
+    });
+  }
+
+  /** Deletes the role a binding referenced, in the namespace it was reachable from. */
+  private async deleteRoleOfRef(roleRef: RoleRefInfo, namespace: string | undefined): Promise<void> {
+    // A Role lives in the namespace of the binding that referenced it, a ClusterRole in none.
+    const roleNamespace = roleRef.kind === 'ClusterRole' ? undefined : namespace;
+    await this.getApi().deleteResource(roleRef.kind, roleRef.name, roleNamespace);
+  }
+
   async addRuleToRole(request: AddRoleRuleRequest): Promise<void> {
     this.telemetryLogger.logUsage('addRuleToRole');
     const name = request.name.trim();
@@ -299,6 +413,104 @@ export class IamManager implements IamApi {
     ]);
   }
 
+  /**
+   * Asks the operator to confirm a revocation, naming the role and the number of rules it
+   * holds: those rules are what the user loses.
+   *
+   * When the revocation leaves the role granted by nothing, the operator is told so and
+   * offered to delete it along the way. Dismissing the dialog answers `undefined`, which is
+   * a refusal like any other.
+   */
+  private async confirmRevocation(
+    roleRef: RoleRefInfo,
+    remainingSubjects: SubjectInfo[],
+    namespace: string | undefined,
+    orphansRole: boolean,
+  ): Promise<RevocationChoice> {
+    const rules = describeRuleCount(this.getRuleCount(roleRef, namespace));
+    const kind = roleRef.kind === 'ClusterRole' ? 'cluster role' : 'role';
+    let message = `Revoke the ${kind} ${roleRef.name}, which holds ${rules}?`;
+    if (remainingSubjects.length > 0) {
+      // The binding survives, so the operator is told the revocation stops at this user.
+      message += ` The ${kind} itself is left in place, and stays granted to ${joinSubjects(remainingSubjects)}.`;
+    } else if (orphansRole) {
+      message += ` Nothing else grants the ${kind}, so Revoke leaves it unused, and Delete removes it too.`;
+    } else {
+      message += ` The ${kind} itself is left in place.`;
+    }
+
+    const buttons = orphansRole ? ['Cancel', 'Revoke', 'Delete'] : ['Cancel', 'Revoke'];
+    const answer = await window.showWarningMessage(message, ...buttons);
+    if (answer === 'Delete') {
+      return 'delete-role';
+    }
+    return answer === 'Revoke' ? 'revoke' : 'cancel';
+  }
+
+  /** The binding of that kind and name, or `undefined` when the cluster does not report it. */
+  private findBinding(
+    bindingKind: string,
+    name: string,
+    namespace: string | undefined,
+  ): RoleBindingInfo | ClusterRoleBindingInfo | undefined {
+    if (bindingKind === 'ClusterRoleBinding') {
+      return this.dashboardStatesManager.getClusterRoleBindings().clusterRoleBindings.find(crb => crb.name === name);
+    }
+    return this.dashboardStatesManager
+      .getRoleBindings()
+      .roleBindings.find(rb => rb.namespace === namespace && rb.name === name);
+  }
+
+  /**
+   * Whether deleting the given binding would leave its role granted by no binding at all.
+   *
+   * A Role is only reachable from a RoleBinding of its own namespace, while a ClusterRole is
+   * reachable from any ClusterRoleBinding and from a RoleBinding of any namespace.
+   */
+  private isRoleLeftUnused(
+    roleRef: RoleRefInfo,
+    bindingKind: string,
+    bindingName: string,
+    namespace: string | undefined,
+  ): boolean {
+    // A built-in role is part of the cluster rather than of the user's setup, and Kubernetes
+    // keeps granting it through bindings of its own, so it is never offered for deletion.
+    if (roleRef.name.startsWith('system:')) {
+      return false;
+    }
+    const grantedByRoleBinding = this.dashboardStatesManager.getRoleBindings().roleBindings.some(rb => {
+      if (rb.roleRef.kind !== roleRef.kind || rb.roleRef.name !== roleRef.name) return false;
+      // A Role is namespaced, so only the bindings of its own namespace reach it.
+      if (roleRef.kind === 'Role' && rb.namespace !== namespace) return false;
+      return !(bindingKind === 'RoleBinding' && rb.namespace === namespace && rb.name === bindingName);
+    });
+    if (grantedByRoleBinding) {
+      return false;
+    }
+    if (roleRef.kind === 'Role') {
+      // No ClusterRoleBinding can reference a Role, so nothing else is left to look at.
+      return true;
+    }
+    return !this.dashboardStatesManager
+      .getClusterRoleBindings()
+      .clusterRoleBindings.some(
+        crb => crb.roleRef.name === roleRef.name && !(bindingKind === 'ClusterRoleBinding' && crb.name === bindingName),
+      );
+  }
+
+  /**
+   * The number of rules of the role a binding references, or `undefined` when the cluster
+   * does not report that role: a binding is allowed to reference a role that does not exist.
+   */
+  private getRuleCount(roleRef: RoleRefInfo, namespace?: string): number | undefined {
+    if (roleRef.kind === 'ClusterRole') {
+      return this.dashboardStatesManager.getClusterRoles().clusterRoles.find(r => r.name === roleRef.name)?.rules
+        .length;
+    }
+    return this.dashboardStatesManager.getRoles().roles.find(r => r.namespace === namespace && r.name === roleRef.name)
+      ?.rules.length;
+  }
+
   private checkedUsername(username: string): string {
     const trimmed = username.trim();
     if (!isValidUsername(trimmed)) {
@@ -325,6 +537,18 @@ export class IamManager implements IamApi {
    * They are built through the YAML serializer rather than a template so that user names
    * needing quoting or escaping cannot alter the shape of the documents.
    */
+  /**
+   * Patches an existing resource with the fields the manifest carries, leaving the fields it
+   * omits as they are. Unlike an apply, this claims no ownership of the fields it sets, so it
+   * goes through whoever wrote the resource.
+   */
+  private async patchManifest(manifest: object): Promise<void> {
+    await this.getApi().patchResources(stringify(manifest), {
+      strategy: 'merge-patch',
+      fieldManager: 'kubernetes-iam',
+    });
+  }
+
   private async applyManifests(manifests: object[]): Promise<void> {
     const documents = manifests.map(manifest => stringify(manifest)).join('---\n');
     await this.getApi().patchResources(documents, {
