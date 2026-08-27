@@ -36,6 +36,7 @@ LABEL org.opencontainers.image.title="Kubernetes IAM extension" \
 
 COPY --from=builder /opt/app-root/src/packages/extension/dist/ /extension/dist
 COPY --from=builder /opt/app-root/src/packages/extension/package.json /extension/
+COPY --from=builder /opt/app-root/src/packages/extension/icon.png /extension/
 COPY --from=builder /opt/app-root/src/packages/extension/media/ /extension/media
 COPY --from=builder /opt/app-root/src/LICENSE /extension/
 COPY --from=builder /opt/app-root/src/README.md /extension/
