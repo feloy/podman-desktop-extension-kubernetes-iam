@@ -8,7 +8,19 @@ Users are not managed directly by the cluster, but they are referenced in RoleBi
 
 - List all users referenced in RoleBindings and ClusterRoleBindings across the cluster
 - Click on a user to view and manage their Roles and ClusterRoles assignments
-- Build kubeconfig files for users
+- Generate client credentials for a user and add them to your local kubeconfig
+
+## Generating credentials for a user
+
+For a given user, the extension can issue a client certificate and register it as a new context in your kubeconfig:
+
+1. A private key and a certificate signing request are generated locally for the user's name.
+2. A `CertificateSigningRequest` is created in the cluster, approved, and then deleted once the certificate has been issued.
+3. A new user entry and a new context (named after the current context and the user) are appended to the kubeconfig file currently used by Podman Desktop. The existing contexts are left untouched.
+
+The issued certificate is valid for 24 hours by default.
+
+This requires the `openssl` command to be available on your machine, and a cluster user allowed to create and approve `CertificateSigningRequest` resources.
 
 ## Installation
 
