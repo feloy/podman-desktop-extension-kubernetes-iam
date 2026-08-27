@@ -45,6 +45,10 @@ export interface CreateClusterRoleBindingRequest {
   subjects: SubjectInfo[];
 }
 
+export interface CreateUserRequest {
+  username: string;
+}
+
 export interface GenerateKubeconfigRequest {
   username: string;
   expirationSeconds?: number;
@@ -75,6 +79,13 @@ export interface IamApi {
   deleteClusterRoleBinding(name: string): Promise<void>;
 
   refreshRbacData(): Promise<void>;
+
+  /**
+   * Makes a user appear in the cluster's RBAC records by binding it to a ClusterRole that
+   * every authenticated user already holds, so the user can be listed without being
+   * granted any privilege it would not otherwise have.
+   */
+  createUser(request: CreateUserRequest): Promise<void>;
 
   generateKubeconfig(request: GenerateKubeconfigRequest): Promise<void>;
 

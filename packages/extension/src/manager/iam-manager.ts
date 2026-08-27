@@ -23,15 +23,32 @@ import type {
   CreateRoleBindingRequest,
   CreateClusterRoleRequest,
   CreateClusterRoleBindingRequest,
+  CreateUserRequest,
   GenerateKubeconfigRequest,
   GetUserDetailsRequest,
   UserDetailsData,
 } from '@kubernetes-iam/channels';
+import type { KubernetesDashboardExtensionApi } from '@podman-desktop/kubernetes-dashboard-extension-api';
 import { TelemetryLoggerSymbol } from '/@/inject/symbol';
 import type { TelemetryLogger } from '@podman-desktop/api';
 import { DashboardApiManager } from '/@/manager/dashboard-api-manager';
 import { DashboardStatesManager } from '/@/manager/dashboard-states-manager';
 import { KubeconfigGenerator } from '/@/manager/kubeconfig-generator';
+import { isValidUsername, toBindingName } from '/@/manager/user-names';
+import { stringify } from 'yaml';
+
+const RBAC_API_GROUP = 'rbac.authorization.k8s.io';
+
+/**
+ * The ClusterRole a newly created user is bound to.
+ *
+ * Kubernetes binds this ClusterRole to the `system:authenticated` group out of the box, so
+ * every authenticated user already holds it: binding a single user to it adds no privilege
+ * and only makes the user appear in the cluster's RBAC records. It also means the binding
+ * can never fail RBAC escalation prevention, since the operator necessarily holds it too.
+ */
+const DEFAULT_CLUSTER_ROLE = 'system:basic-user';
+const DEFAULT_BINDING_SUFFIX = 'basic-user';
 
 @injectable()
 export class IamManager implements IamApi {
@@ -95,7 +112,7 @@ export class IamManager implements IamApi {
 
   async createClusterRoleBinding(request: CreateClusterRoleBindingRequest): Promise<void> {
     this.telemetryLogger.logUsage('createClusterRoleBinding');
-    console.log('createClusterRoleBinding', request.name);
+    await this.applyClusterRoleBinding(request);
   }
 
   async updateClusterRoleBinding(request: CreateClusterRoleBindingRequest): Promise<void> {
@@ -111,6 +128,43 @@ export class IamManager implements IamApi {
   async refreshRbacData(): Promise<void> {
     this.telemetryLogger.logUsage('refreshRbacData');
     // TODO: delegate to Dashboard API once RBAC capabilities are available
+  }
+
+  async createUser(request: CreateUserRequest): Promise<void> {
+    this.telemetryLogger.logUsage('createUser');
+    const username = request.username.trim();
+    if (!isValidUsername(username)) {
+      throw new Error(`Invalid user name: ${request.username}`);
+    }
+    await this.applyClusterRoleBinding({
+      name: toBindingName(username, DEFAULT_BINDING_SUFFIX),
+      roleRef: { apiGroup: RBAC_API_GROUP, kind: 'ClusterRole', name: DEFAULT_CLUSTER_ROLE },
+      subjects: [{ apiGroup: RBAC_API_GROUP, kind: 'User', name: username }],
+    });
+  }
+
+  private async applyClusterRoleBinding(request: CreateClusterRoleBindingRequest): Promise<void> {
+    // Built through the YAML serializer rather than a template so that user names needing
+    // quoting or escaping cannot alter the shape of the document.
+    const manifest = stringify({
+      apiVersion: `${RBAC_API_GROUP}/v1`,
+      kind: 'ClusterRoleBinding',
+      metadata: { name: request.name },
+      roleRef: request.roleRef,
+      subjects: request.subjects,
+    });
+    await this.getApi().patchResources(manifest, {
+      strategy: 'server-side-apply',
+      fieldManager: 'kubernetes-iam',
+    });
+  }
+
+  private getApi(): KubernetesDashboardExtensionApi {
+    const api = this.dashboardApiManager.getApi();
+    if (!api) {
+      throw new Error('Dashboard extension API not available');
+    }
+    return api;
   }
 
   async generateKubeconfig(request: GenerateKubeconfigRequest): Promise<void> {

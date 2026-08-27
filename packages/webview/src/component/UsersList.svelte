@@ -6,19 +6,24 @@ import {
   TableSimpleColumn,
   NavPage,
   FilteredEmptyScreen,
+  Button,
 } from '@podman-desktop/ui-svelte';
-import { faUsers } from '@fortawesome/free-solid-svg-icons';
+import { faUsers, faPlusCircle } from '@fortawesome/free-solid-svg-icons';
 import { getContext, onDestroy, onMount } from 'svelte';
 import type { Unsubscriber } from 'svelte/store';
 import { States } from '/@/state/states';
 import type { UserUI } from './users/UserUI';
 import UserNameLink from './users/UserNameLink.svelte';
 import DownloadKubeconfigAction from './users/DownloadKubeconfigAction.svelte';
+import CreateUserDialog from './users/CreateUserDialog.svelte';
 
 const states = getContext<States>(States);
 const usersState = $derived(states.stateUsersData.data);
 
 let searchTerm = $state<string>('');
+let createDialogOpened = $state(false);
+
+const existingNames: string[] = $derived((usersState?.users ?? []).map(user => user.name));
 
 let subscribers: Unsubscriber[] = [];
 
@@ -70,6 +75,10 @@ const row = new TableRow<UserUI>({ selectable: (): boolean => false });
 </script>
 
 <NavPage bind:searchTerm={searchTerm} title="Users">
+  {#snippet additionalActions()}
+    <Button icon={faPlusCircle} onclick={(): boolean => (createDialogOpened = true)}>Create user</Button>
+  {/snippet}
+
   {#snippet content()}
     <div class="flex min-w-full h-full">
       <Table kind="user" data={users} columns={columns} row={row} defaultSortColumn="Name"></Table>
@@ -88,3 +97,7 @@ const row = new TableRow<UserUI>({ selectable: (): boolean => false });
     </div>
   {/snippet}
 </NavPage>
+
+{#if createDialogOpened}
+  <CreateUserDialog existingNames={existingNames} onclose={(): boolean => (createDialogOpened = false)} />
+{/if}

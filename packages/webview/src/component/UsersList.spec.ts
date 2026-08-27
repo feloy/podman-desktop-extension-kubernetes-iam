@@ -17,19 +17,26 @@
  ***********************************************************************/
 
 import { beforeEach, describe, expect, test, vi } from 'vitest';
-import { render, screen } from '@testing-library/svelte';
-import type { UsersData } from '@kubernetes-iam/channels';
+import { fireEvent, render, screen } from '@testing-library/svelte';
+import type { IamApi, UsersData } from '@kubernetes-iam/channels';
+import { API_IAM } from '@kubernetes-iam/channels';
 import UsersList from './UsersList.svelte';
 import { StatesMocks } from '/@/tests/state-mocks';
+import { RemoteMocks } from '/@/tests/remote-mocks';
 import { FakeStateObject } from '/@/state/util/fake-state-object.svelte';
 import * as uiSvelte from '@podman-desktop/ui-svelte';
 import type { SvelteComponent } from 'svelte';
 
 const statesMocks = new StatesMocks();
+const remoteMocks = new RemoteMocks();
 let usersStateMock: FakeStateObject<UsersData, void>;
 
 beforeEach(() => {
   vi.resetAllMocks();
+  remoteMocks.reset();
+  remoteMocks.mock(API_IAM, {
+    createUser: vi.fn().mockResolvedValue(undefined),
+  } as unknown as IamApi);
   statesMocks.reset();
   usersStateMock = new FakeStateObject();
   statesMocks.mock<UsersData, void>('stateUsersData', usersStateMock);
@@ -87,5 +94,40 @@ describe('UsersList', () => {
   test('displays page title', () => {
     render(UsersList);
     expect(screen.getByRole('region', { name: 'Users' })).toBeDefined();
+  });
+
+  test('offers a Create user action', () => {
+    render(UsersList);
+    expect(screen.getByRole('button', { name: 'Create user' })).toBeDefined();
+  });
+
+  test('opens the create dialog when the action is clicked', async () => {
+    render(UsersList);
+    expect(screen.queryByRole('dialog', { name: 'Create user' })).toBeNull();
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Create user' }));
+
+    expect(screen.getByRole('dialog', { name: 'Create user' })).toBeDefined();
+  });
+
+  test('creates the user entered in the dialog', async () => {
+    render(UsersList);
+    await fireEvent.click(screen.getByRole('button', { name: 'Create user' }));
+
+    await fireEvent.input(screen.getByRole('textbox', { name: 'User name' }), { target: { value: 'alice' } });
+    await fireEvent.click(screen.getByRole('button', { name: 'Create' }));
+
+    expect(remoteMocks.get(API_IAM).createUser).toHaveBeenCalledWith({ username: 'alice' });
+  });
+
+  test('refuses a user name already in the list', async () => {
+    usersStateMock.setData({ users: [{ kind: 'User', name: 'alice' }] });
+    render(UsersList);
+    await fireEvent.click(screen.getByRole('button', { name: 'Create user' }));
+
+    await fireEvent.input(screen.getByRole('textbox', { name: 'User name' }), { target: { value: 'alice' } });
+
+    expect(screen.getByText('A user named alice already exists.')).toBeDefined();
+    expect(remoteMocks.get(API_IAM).createUser).not.toHaveBeenCalled();
   });
 });
