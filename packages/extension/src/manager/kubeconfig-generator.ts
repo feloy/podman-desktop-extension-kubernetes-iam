@@ -25,6 +25,7 @@ import { writeFile, mkdtemp, rm, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { parse, stringify } from 'yaml';
+import { isValidUsername } from '/@/manager/user-names';
 
 interface KubeconfigFile {
   'current-context'?: string;
@@ -34,7 +35,6 @@ interface KubeconfigFile {
   [key: string]: unknown;
 }
 
-const USERNAME_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._@-]*$/;
 const DEFAULT_EXPIRATION_SECONDS = 86400;
 const CERTIFICATE_WAIT_TIMEOUT_MS = 30_000;
 
@@ -47,7 +47,7 @@ export class KubeconfigGenerator {
   private dashboardStatesManager: DashboardStatesManager;
 
   async generate(username: string, expirationSeconds?: number): Promise<void> {
-    if (!USERNAME_PATTERN.exec(username)) {
+    if (!isValidUsername(username)) {
       throw new Error(`Invalid username: ${username}`);
     }
 
