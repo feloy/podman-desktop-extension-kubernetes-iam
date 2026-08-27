@@ -181,12 +181,8 @@ describe('extractUniqueUsers', () => {
       ],
     };
     const users = extractUniqueUsers(roleBindings, clusterRoleBindings);
-    expect(users).toHaveLength(3);
-    expect(users).toEqual([
-      { kind: 'User', name: 'alice', namespace: undefined, apiGroup: undefined },
-      { kind: 'ServiceAccount', name: 'sa1', namespace: 'kube-system', apiGroup: undefined },
-      { kind: 'Group', name: 'devs', namespace: undefined, apiGroup: 'rbac.authorization.k8s.io' },
-    ]);
+    expect(users).toHaveLength(1);
+    expect(users).toEqual([{ contextName: 'ctx1', kind: 'User', name: 'alice', apiGroup: undefined }]);
   });
 
   test('returns empty array when no bindings', () => {
@@ -194,7 +190,7 @@ describe('extractUniqueUsers', () => {
     expect(users).toEqual([]);
   });
 
-  test('treats same name with different namespace as different users', () => {
+  test('ignores Group and ServiceAccount subjects', () => {
     const roleBindings = {
       roleBindings: [
         {
@@ -204,12 +200,39 @@ describe('extractUniqueUsers', () => {
           roleRef: { apiGroup: '', kind: 'Role', name: 'role1' },
           subjects: [
             { kind: 'ServiceAccount', name: 'sa1', namespace: 'ns1' },
-            { kind: 'ServiceAccount', name: 'sa1', namespace: 'ns2' },
+            { kind: 'Group', name: 'devs', apiGroup: 'rbac.authorization.k8s.io' },
+            { kind: 'User', name: 'bob' },
           ],
         },
       ],
     };
     const users = extractUniqueUsers(roleBindings, { clusterRoleBindings: [] });
+    expect(users).toHaveLength(1);
+    expect(users[0].name).toBe('bob');
+  });
+
+  test('treats same user in different contexts as separate entries', () => {
+    const roleBindings = {
+      roleBindings: [
+        {
+          contextName: 'ctx1',
+          namespace: 'default',
+          name: 'rb1',
+          roleRef: { apiGroup: '', kind: 'Role', name: 'role1' },
+          subjects: [{ kind: 'User', name: 'alice' }],
+        },
+        {
+          contextName: 'ctx2',
+          namespace: 'default',
+          name: 'rb2',
+          roleRef: { apiGroup: '', kind: 'Role', name: 'role1' },
+          subjects: [{ kind: 'User', name: 'alice' }],
+        },
+      ],
+    };
+    const users = extractUniqueUsers(roleBindings, { clusterRoleBindings: [] });
     expect(users).toHaveLength(2);
+    expect(users[0].contextName).toBe('ctx1');
+    expect(users[1].contextName).toBe('ctx2');
   });
 });

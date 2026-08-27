@@ -48,6 +48,11 @@ export interface CreateClusterRoleBindingRequest {
   subjects: SubjectInfo[];
 }
 
+export interface GenerateKubeconfigRequest {
+  username: string;
+  expirationSeconds?: number;
+}
+
 export const IamApi = Symbol.for('IamApi');
 
 export interface IamApi {
@@ -68,4 +73,6 @@ export interface IamApi {
   deleteClusterRoleBinding(contextName: string, name: string): Promise<void>;
 
   refreshRbacData(contextName: string): Promise<void>;
+
+  generateKubeconfig(request: GenerateKubeconfigRequest): Promise<void>;
 }

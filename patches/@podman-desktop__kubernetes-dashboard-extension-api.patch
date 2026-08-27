@@ -1,0 +1,149 @@
+diff --git a/src/kubernetes-dashboard-extension-api.d.ts b/src/kubernetes-dashboard-extension-api.d.ts
+index 49bf3ced09084566161140d94ff399319a933c2a..4473f053ff0f46df5bc7bc062f7eb67906907efe 100644
+--- a/src/kubernetes-dashboard-extension-api.d.ts
++++ b/src/kubernetes-dashboard-extension-api.d.ts
+@@ -32,6 +32,28 @@ export interface ContextHealth {
+   errorMessage?: string;
+ }
+ 
++/**
++ * Patch strategy for Kubernetes resource operations.
++ *
++ * - `'json-patch'` — `application/json-patch+json` (RFC 6902)
++ * - `'merge-patch'` — `application/merge-patch+json` (RFC 7386)
++ * - `'strategic-merge-patch'` — `application/strategic-merge-patch+json` (Kubernetes-specific)
++ * - `'server-side-apply'` — `application/apply-patch+yaml` (server-side field management)
++ */
++export type PatchStrategyType = 'json-patch' | 'merge-patch' | 'strategic-merge-patch' | 'server-side-apply';
++
++export interface PatchResourcesOptions {
++  /**
++   * The patch strategy to use. Defaults to `'strategic-merge-patch'`.
++   */
++  strategy?: PatchStrategyType;
++  /**
++   * The field manager name for server-side field ownership tracking.
++   * Defaults to `'kubernetes-dashboard'`.
++   */
++  fieldManager?: string;
++}
++
+ export interface ContextsHealthsInfo {
+   healths: ContextHealth[];
+ }
+@@ -68,6 +90,48 @@ export interface ResourcesCountInfo {
+   counts: ResourceCount[];
+ }
+ 
++/**
++ * Options for subscribing to resource updates.
++ */
++export interface ResourceUpdateOptions {
++  /**
++   * The resource name to subscribe to (e.g., 'pods', 'deployments', 'services').
++   */
++  resourceName: string;
++  /**
++   * The context name to subscribe to. If not set, defaults to the current context.
++   */
++  contextName?: string;
++}
++
++/**
++ * A Kubernetes resource object.
++ * Consumer extensions should cast items to specific types from `@kubernetes/client-node`
++ * (e.g., `items as V1Pod[]` for `'pods'` resources).
++ */
++export interface KubernetesObject {
++  apiVersion?: string;
++  kind?: string;
++  metadata?: Record<string, unknown>;
++  [key: string]: unknown;
++}
++
++/**
++ * Resource items for a specific context and resource type.
++ */
++export interface ContextResourceItems {
++  contextName?: string;
++  resourceName: string;
++  items: readonly KubernetesObject[];
++}
++
++/**
++ * The payload for resource update events.
++ */
++export interface ResourceUpdateInfo {
++  resources: ContextResourceItems[];
++}
++
+ /**
+  * The subscriber for the events emitted by the Kubernetes Dashboard extension.
+  */
+@@ -87,6 +151,17 @@ export interface KubernetesDashboardSubscriber {
+    */
+   onResourcesCount(listener: (event: ResourcesCountInfo) => void): Disposable;
+ 
++  /**
++   * Subscribes to the events emitted every time the resources of the specified type are updated.
++   *
++   * The listener receives the full list of resources for the specified resource type and context.
++   * An initial event is emitted immediately with the current cached data.
++   *
++   * Consumer extensions should cast the received items to specific types from `@kubernetes/client-node`
++   * (e.g., `items as V1Pod[]` for `'pods'` resources).
++   */
++  onResourceUpdate(options: ResourceUpdateOptions, listener: (event: ResourceUpdateInfo) => void): Disposable;
++
+   /**
+    * Disposes the subscriber and unsubscribes from all the events emitted by the Kubernetes Dashboard extension.
+    */
+@@ -125,6 +200,48 @@ export interface KubernetesDashboardExtensionApi {
+    */
+   getSubscriber(): KubernetesDashboardSubscriber;
+ 
++  /**
++   * Patches Kubernetes resources.
++   *
++   * Accepts one or more YAML documents (separated by `---`) describing the resources to patch.
++   * Each resource must have `apiVersion`, `kind`, and `metadata.name` set.
++   *
++   * @param yamlDocuments - The YAML documents describing the resources to patch.
++   * @param options - Options controlling patch strategy and field manager.
++   */
++  patchResources(yamlDocuments: string, options?: PatchResourcesOptions): Promise<void>;
++
++  /**
++   * Deletes a Kubernetes resource.
++   *
++   * @param kind - The kind of the resource to delete (e.g., 'Pod', 'Deployment').
++   * @param name - The name of the resource to delete.
++   * @param namespace - The namespace of the resource. If not set, defaults to the current namespace.
++   */
++  deleteResource(kind: string, name: string, namespace?: string): Promise<void>;
++
++  /**
++   * Patches a Kubernetes subresource using a merge patch.
++   *
++   * Builds the subresource URL from the provided parameters and sends a raw HTTP PATCH
++   * with content-type `application/merge-patch+json`.
++   *
++   * @param apiVersion - The API version (e.g., 'v1', 'certificates.k8s.io/v1').
++   * @param resource - The resource plural name (e.g., 'pods', 'certificatesigningrequests').
++   * @param name - The name of the resource.
++   * @param subresource - The subresource to patch (e.g., 'status', 'approval', 'scale').
++   * @param body - The patch body object.
++   * @param namespace - The namespace of the resource. Omit for cluster-scoped resources.
++   */
++  patchSubresource(
++    apiVersion: string,
++    resource: string,
++    name: string,
++    subresource: string,
++    body: object,
++    namespace?: string,
++  ): Promise<void>;
++
+   readonly contexts: typeof contexts;
+ }
+ 

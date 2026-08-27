@@ -12,6 +12,7 @@ import { getContext, onDestroy, onMount } from 'svelte';
 import type { Unsubscriber } from 'svelte/store';
 import { States } from '/@/state/states';
 import type { UserUI } from './users/UserUI';
+import DownloadKubeconfigAction from './users/DownloadKubeconfigAction.svelte';
 
 const states = getContext<States>(States);
 const usersState = $derived(states.stateUsersData.data);
@@ -36,24 +37,14 @@ const users: UserUI[] = $derived(
     .filter(user => {
       if (!searchTerm) return true;
       const term = searchTerm.toLowerCase();
-      return (
-        user.name.toLowerCase().includes(term) ||
-        user.kind.toLowerCase().includes(term) ||
-        (user.namespace?.toLowerCase().includes(term) ?? false)
-      );
+      return user.name.toLowerCase().includes(term) || user.kind.toLowerCase().includes(term);
     })
     .map(user => ({
+      contextName: user.contextName,
       name: user.name,
       kind: user.kind,
-      namespace: user.namespace,
     })),
 );
-
-const namespaceColumn = new TableColumn<UserUI, string>('Namespace', {
-  renderMapping: (user): string => user.namespace ?? '',
-  renderer: TableSimpleColumn,
-  comparator: (a, b): number => (a.namespace ?? '').localeCompare(b.namespace ?? ''),
-});
 
 const nameColumn = new TableColumn<UserUI, string>('Name', {
   renderMapping: (user): string => user.name,
@@ -67,14 +58,14 @@ const typeColumn = new TableColumn<UserUI, string>('Type', {
   comparator: (a, b): number => a.kind.localeCompare(b.kind),
 });
 
-const scopeColumn = new TableColumn<UserUI, string>('Scope', {
-  renderMapping: (user): string => (user.namespace ? 'Namespaced' : 'Cluster-wide'),
-  renderer: TableSimpleColumn,
-  comparator: (a, b): number =>
-    (a.namespace ? 'Namespaced' : 'Cluster-wide').localeCompare(b.namespace ? 'Namespaced' : 'Cluster-wide'),
+const actionsColumn = new TableColumn<UserUI, UserUI>('Actions', {
+  align: 'right',
+  renderMapping: (user): UserUI => user,
+  renderer: DownloadKubeconfigAction,
+  overflow: true,
 });
 
-const columns = [namespaceColumn, nameColumn, typeColumn, scopeColumn];
+const columns = [nameColumn, typeColumn, actionsColumn];
 const row = new TableRow<UserUI>({ selectable: (): boolean => false });
 </script>
 

@@ -128,15 +128,16 @@ export function extractUniqueUsers(
   const seen = new Set<string>();
   const users: UserInfo[] = [];
 
-  const addSubjects = (subjects: SubjectInfo[]): void => {
+  const addSubjects = (contextName: string, subjects: SubjectInfo[]): void => {
     for (const s of subjects) {
-      const key = `${s.kind}/${s.name}/${s.namespace ?? ''}/${s.apiGroup ?? ''}`;
+      if (s.kind !== 'User') continue;
+      const key = [contextName, s.kind, s.name, s.apiGroup ?? ''].join('\0');
       if (!seen.has(key)) {
         seen.add(key);
         users.push({
+          contextName,
           kind: s.kind,
           name: s.name,
-          namespace: s.namespace,
           apiGroup: s.apiGroup,
         });
       }
@@ -144,10 +145,10 @@ export function extractUniqueUsers(
   };
 
   for (const rb of roleBindings.roleBindings) {
-    addSubjects(rb.subjects);
+    addSubjects(rb.contextName, rb.subjects);
   }
   for (const crb of clusterRoleBindings.clusterRoleBindings) {
-    addSubjects(crb.subjects);
+    addSubjects(crb.contextName, crb.subjects);
   }
 
   return users;

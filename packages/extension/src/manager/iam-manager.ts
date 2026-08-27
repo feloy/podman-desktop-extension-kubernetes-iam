@@ -23,15 +23,20 @@ import type {
   CreateRoleBindingRequest,
   CreateClusterRoleRequest,
   CreateClusterRoleBindingRequest,
+  GenerateKubeconfigRequest,
 } from '@kubernetes-iam/channels';
 import { TelemetryLoggerSymbol } from '/@/inject/symbol';
 import type { TelemetryLogger } from '@podman-desktop/api';
 import { DashboardApiManager } from '/@/manager/dashboard-api-manager';
+import { KubeconfigGenerator } from '/@/manager/kubeconfig-generator';
 
 @injectable()
 export class IamManager implements IamApi {
   @inject(DashboardApiManager)
   private dashboardApiManager: DashboardApiManager;
+
+  @inject(KubeconfigGenerator)
+  private kubeconfigGenerator: KubeconfigGenerator;
 
   @inject(TelemetryLoggerSymbol)
   private telemetryLogger: TelemetryLogger;
@@ -100,5 +105,10 @@ export class IamManager implements IamApi {
   async refreshRbacData(_contextName: string): Promise<void> {
     this.telemetryLogger.logUsage('refreshRbacData');
     // TODO: delegate to Dashboard API once RBAC capabilities are available
+  }
+
+  async generateKubeconfig(request: GenerateKubeconfigRequest): Promise<void> {
+    this.telemetryLogger.logUsage('generateKubeconfig');
+    await this.kubeconfigGenerator.generate(request.username, request.expirationSeconds);
   }
 }
