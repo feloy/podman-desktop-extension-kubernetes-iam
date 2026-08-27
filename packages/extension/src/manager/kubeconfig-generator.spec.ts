@@ -196,6 +196,39 @@ clusters:
     );
   });
 
+  describe('certificate lifetime', () => {
+    // Stops the flow right after the CSR has been created, which is all these
+    // assertions need.
+    async function createCsr(username: string, expirationSeconds?: number): Promise<string> {
+      vi.mocked(pdProcess.exec)
+        .mockResolvedValueOnce({ command: 'openssl', stdout: 'OpenSSL 3.0', stderr: '' })
+        .mockResolvedValueOnce({ command: 'openssl', stdout: 'PRIVATE KEY PEM', stderr: '' })
+        .mockResolvedValueOnce({ command: 'openssl', stdout: 'CSR PEM', stderr: '' });
+      vi.mocked(mockSubscriber.onResourceUpdate).mockReturnValue({ dispose: vi.fn() });
+      vi.mocked(mockApi.patchSubresource).mockRejectedValueOnce(new Error('stop after CSR creation'));
+
+      await expect(generator.generate(username, expirationSeconds)).rejects.toThrow('stop after CSR creation');
+
+      return (vi.mocked(mockApi.patchResources).mock.calls[0]?.[0] as string) ?? '';
+    }
+
+    test('requests a one-year certificate by default', async () => {
+      await expect(createCsr('alice')).resolves.toContain('expirationSeconds: 31536000');
+    });
+
+    test('honours an explicit expiration', async () => {
+      await expect(createCsr('alice', 3600)).resolves.toContain('expirationSeconds: 3600');
+    });
+
+    test('raises an expiration below the Kubernetes minimum', async () => {
+      await expect(createCsr('alice', 60)).resolves.toContain('expirationSeconds: 600');
+    });
+
+    test('falls back to the default for a non-finite expiration', async () => {
+      await expect(createCsr('alice', Number.NaN)).resolves.toContain('expirationSeconds: 31536000');
+    });
+  });
+
   test('adds numeric suffix when context name already exists', async () => {
     vi.mocked(pdProcess.exec)
       .mockResolvedValueOnce({ command: 'openssl', stdout: 'OpenSSL 3.0', stderr: '' })

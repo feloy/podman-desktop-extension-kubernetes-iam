@@ -662,7 +662,7 @@ test('revokeRoleFromUser names the role and its number of rules in the confirmat
     namespace: 'default',
   });
 
-  expect(confirmationMessage()).toContain('role pod-reader');
+  expect(confirmationMessage()).toContain('Revoke Role pod-reader');
   expect(confirmationMessage()).toContain('1 rule');
 });
 
@@ -676,7 +676,7 @@ test('revokeRoleFromUser names the cluster role and its number of rules in the c
     bindingName: 'cluster-binding1',
   });
 
-  expect(confirmationMessage()).toContain('cluster role node-reader');
+  expect(confirmationMessage()).toContain('Revoke ClusterRole node-reader');
   expect(confirmationMessage()).toContain('2 rules');
 });
 
@@ -691,7 +691,9 @@ test('revokeRoleFromUser tells which subjects keep the role, qualifying groups a
     namespace: 'default',
   });
 
-  expect(confirmationMessage()).toContain('and stays granted to bob, the group devs and the service account build/ci.');
+  expect(confirmationMessage()).toContain(
+    'RoleBinding binding1 still grants it to bob, the group devs and the service account build/ci.',
+  );
 });
 
 test('revokeRoleFromUser says nothing about other subjects when the binding only holds the user', async () => {
@@ -705,7 +707,7 @@ test('revokeRoleFromUser says nothing about other subjects when the binding only
     namespace: 'default',
   });
 
-  expect(confirmationMessage()).not.toContain('stays granted');
+  expect(confirmationMessage()).not.toContain('still grants it to');
 });
 
 test.each([{ answer: 'Cancel' }, { answer: undefined }])(
@@ -746,7 +748,7 @@ test('revokeRoleFromUser confirms even when the role the binding grants is unkno
     namespace: 'default',
   });
 
-  expect(confirmationMessage()).toContain('unknown rules');
+  expect(confirmationMessage()).toContain('(rule count unknown)');
   expect(mockApi.deleteResource).toHaveBeenCalledExactlyOnceWith('RoleBinding', 'binding1', 'default');
 });
 
@@ -822,7 +824,7 @@ test('revokeRoleFromUser offers to delete the role no other binding grants', asy
     namespace: 'default',
   });
 
-  expect(confirmationMessage()).toContain('Nothing else grants the role');
+  expect(confirmationMessage()).toContain('nothing else grants the Role');
   expect(vi.mocked(window.showWarningMessage).mock.calls[0].slice(1)).toEqual(['Cancel', 'Revoke', 'Delete']);
 });
 
@@ -892,7 +894,7 @@ test('revokeRoleFromUser does not offer to delete a role another binding still g
     namespace: 'default',
   });
 
-  expect(confirmationMessage()).toContain('The role itself is left in place.');
+  expect(confirmationMessage()).toContain('The Role itself is not modified, and other bindings still grant it.');
   expect(vi.mocked(window.showWarningMessage).mock.calls[0].slice(1)).toEqual(['Cancel', 'Revoke']);
 });
 
@@ -919,7 +921,7 @@ test('revokeRoleFromUser ignores a binding of another namespace when looking for
     namespace: 'default',
   });
 
-  expect(confirmationMessage()).toContain('Nothing else grants the role');
+  expect(confirmationMessage()).toContain('nothing else grants the Role');
 });
 
 test('revokeRoleFromUser counts a namespaced binding as a grant of a cluster role', async () => {

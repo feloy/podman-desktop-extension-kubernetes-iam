@@ -98,6 +98,20 @@ function checkedRule(rule: PolicyRuleInfo): PolicyRuleInfo {
 /** What the operator answered to the confirmation of a revocation. */
 type RevocationChoice = 'cancel' | 'revoke' | 'delete-role';
 
+/** What a revocation is about to change, as the confirmation message describes it. */
+interface RevocationInfo {
+  username: string;
+  bindingKind: string;
+  bindingName: string;
+  roleRef: RoleRefInfo;
+  /** The subjects the binding keeps, empty when the revocation deletes it. */
+  remainingSubjects: SubjectInfo[];
+  /** The namespace of the binding, unset for a cluster-wide one. */
+  namespace: string | undefined;
+  /** Whether the revocation leaves the role granted by no binding at all. */
+  orphansRole: boolean;
+}
+
 /**
  * Names the subjects a binding still grants its role to, qualifying every kind but `User`
  * so that a group or a service account is not read as a user.
@@ -123,7 +137,7 @@ function joinSubjects(subjects: SubjectInfo[]): string {
 /** Names the rules a role holds, or says they are unknown when the role could not be read. */
 function describeRuleCount(ruleCount: number | undefined): string {
   if (ruleCount === undefined) {
-    return 'unknown rules';
+    return 'rule count unknown';
   }
   return ruleCount === 1 ? '1 rule' : `${ruleCount} rules`;
 }
@@ -317,7 +331,15 @@ export class IamManager implements IamApi {
     const deletesBinding = remaining.length === 0;
     const orphansRole = deletesBinding && this.isRoleLeftUnused(binding.roleRef, request.bindingKind, name, namespace);
 
-    const choice = await this.confirmRevocation(binding.roleRef, remaining, namespace, orphansRole);
+    const choice = await this.confirmRevocation({
+      username,
+      bindingKind: request.bindingKind,
+      bindingName: name,
+      roleRef: binding.roleRef,
+      remainingSubjects: remaining,
+      namespace,
+      orphansRole,
+    });
     if (choice === 'cancel') {
       return;
     }
@@ -414,29 +436,29 @@ export class IamManager implements IamApi {
   }
 
   /**
-   * Asks the operator to confirm a revocation, naming the role and the number of rules it
-   * holds: those rules are what the user loses.
+   * Asks the operator to confirm a revocation.
    *
-   * When the revocation leaves the role granted by nothing, the operator is told so and
-   * offered to delete it along the way. Dismissing the dialog answers `undefined`, which is
-   * a refusal like any other.
+   * The question names the role, the user it is revoked from, and how many rules the role
+   * holds, since those rules are the extent of what the grant gives. The rest of the message
+   * says what the revocation touches: the binding, which is either narrowed to its other
+   * subjects or deleted, and the role, which is only ever removed on an explicit Delete.
+   * Dismissing the dialog answers `undefined`, which is a refusal like any other.
    */
-  private async confirmRevocation(
-    roleRef: RoleRefInfo,
-    remainingSubjects: SubjectInfo[],
-    namespace: string | undefined,
-    orphansRole: boolean,
-  ): Promise<RevocationChoice> {
+  private async confirmRevocation(revocation: RevocationInfo): Promise<RevocationChoice> {
+    const { username, bindingKind, bindingName, roleRef, remainingSubjects, namespace, orphansRole } = revocation;
     const rules = describeRuleCount(this.getRuleCount(roleRef, namespace));
-    const kind = roleRef.kind === 'ClusterRole' ? 'cluster role' : 'role';
-    let message = `Revoke the ${kind} ${roleRef.name}, which holds ${rules}?`;
+    const binding = `${bindingKind} ${bindingName}`;
+    let message = `Revoke ${roleRef.kind} ${roleRef.name} (${rules}) from ${username}?`;
     if (remainingSubjects.length > 0) {
       // The binding survives, so the operator is told the revocation stops at this user.
-      message += ` The ${kind} itself is left in place, and stays granted to ${joinSubjects(remainingSubjects)}.`;
+      message += ` ${binding} still grants it to ${joinSubjects(remainingSubjects)}.`;
+      message += ` The ${roleRef.kind} itself is not modified.`;
     } else if (orphansRole) {
-      message += ` Nothing else grants the ${kind}, so Revoke leaves it unused, and Delete removes it too.`;
+      message += ` ${binding} is deleted, as ${username} is its only subject, and nothing else grants the ${roleRef.kind}.`;
+      message += ` Revoke leaves it in place but unused; Delete removes it as well.`;
     } else {
-      message += ` The ${kind} itself is left in place.`;
+      message += ` ${binding} is deleted, as ${username} is its only subject.`;
+      message += ` The ${roleRef.kind} itself is not modified, and other bindings still grant it.`;
     }
 
     const buttons = orphansRole ? ['Cancel', 'Revoke', 'Delete'] : ['Cancel', 'Revoke'];
