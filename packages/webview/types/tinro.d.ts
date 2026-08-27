@@ -16,9 +16,18 @@
  * SPDX-License-Identifier: Apache-2.0
  ***********************************************************************/
 
-export * from './role-info';
-export * from './role-binding-info';
-export * from './cluster-role-info';
-export * from './cluster-role-binding-info';
-export * from './user-info';
-export * from './user-details-info';
+declare module 'tinro/dist/tinro_lib' {
+  interface RouteObject {
+    update(options: { path: string | boolean; redirect: string | boolean; firstmatch: boolean }): void;
+    destroy(): void;
+  }
+
+  interface RouteObjectOptions {
+    fallback: boolean;
+    onShow(): void;
+    onHide(): void;
+    onMeta(meta: Record<string, unknown>): void;
+  }
+
+  export function createRouteObject(options: RouteObjectOptions): RouteObject;
+}

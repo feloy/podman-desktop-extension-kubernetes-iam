@@ -12,6 +12,7 @@ import { getContext, onDestroy, onMount } from 'svelte';
 import type { Unsubscriber } from 'svelte/store';
 import { States } from '/@/state/states';
 import type { UserUI } from './users/UserUI';
+import UserNameLink from './users/UserNameLink.svelte';
 import DownloadKubeconfigAction from './users/DownloadKubeconfigAction.svelte';
 
 const states = getContext<States>(States);
@@ -46,9 +47,9 @@ const users: UserUI[] = $derived(
     })),
 );
 
-const nameColumn = new TableColumn<UserUI, string>('Name', {
-  renderMapping: (user): string => user.name,
-  renderer: TableSimpleColumn,
+const nameColumn = new TableColumn<UserUI, UserUI>('Name', {
+  renderMapping: (user): UserUI => user,
+  renderer: UserNameLink,
   comparator: (a, b): number => a.name.localeCompare(b.name),
 });
 

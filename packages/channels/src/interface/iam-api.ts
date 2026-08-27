@@ -18,6 +18,7 @@
 
 import type { PolicyRuleInfo } from '/@/model/role-info';
 import type { RoleRefInfo, SubjectInfo } from '/@/model/role-binding-info';
+import type { GetUserDetailsRequest, UserDetailsData } from '/@/model/user-details-info';
 
 export interface CreateRoleRequest {
   contextName: string;
@@ -75,4 +76,6 @@ export interface IamApi {
   refreshRbacData(contextName: string): Promise<void>;
 
   generateKubeconfig(request: GenerateKubeconfigRequest): Promise<void>;
+
+  getUserDetails(request: GetUserDetailsRequest): Promise<UserDetailsData>;
 }
