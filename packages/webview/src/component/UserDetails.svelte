@@ -12,13 +12,13 @@ import type { UserDetailsData, IamApi } from '@kubernetes-iam/channels';
 import { API_IAM } from '@kubernetes-iam/channels';
 import { Remote } from '/@/remote/remote';
 
-interface UserRoleUI {
+interface RoleRowUI {
   selected?: boolean;
   name: string;
-  roleKind: string;
-  bindingName: string;
-  bindingKind: string;
-  namespace?: string;
+  col2: string;
+  col3: string;
+  col4: string;
+  children?: RoleRowUI[];
 }
 
 interface Props {
@@ -47,45 +47,53 @@ onMount(async () => {
   }
 });
 
-function toUI(d: UserDetailsData | undefined): UserRoleUI[] {
+function toUI(d: UserDetailsData | undefined): RoleRowUI[] {
   if (!d) return [];
   return d.roles.map(r => ({
     name: r.roleName,
-    roleKind: r.roleKind,
-    bindingName: r.bindingName,
-    bindingKind: r.bindingKind,
-    namespace: r.namespace,
+    col2: r.roleKind,
+    col3: r.bindingName,
+    col4: r.namespace ?? 'Cluster-wide',
+    children: r.rules.map((rule, i) => ({
+      name: rule.apiGroups.map(g => (g === '' ? 'core' : g)).join(', ') || '*',
+      col2: rule.resources.join(', ') || '*',
+      col3: rule.verbs.join(', '),
+      col4: rule.resourceNames?.join(', ') ?? '',
+    })),
   }));
 }
 
-const roles: UserRoleUI[] = $derived(toUI(details));
+const roles: RoleRowUI[] = $derived(toUI(details));
 
-const roleNameColumn = new TableColumn<UserRoleUI, string>('Role', {
+const roleColumn = new TableColumn<RoleRowUI, string>('Role / API Groups', {
   renderMapping: (r): string => r.name,
   renderer: TableSimpleColumn,
   comparator: (a, b): number => a.name.localeCompare(b.name),
 });
 
-const roleKindColumn = new TableColumn<UserRoleUI, string>('Role Kind', {
-  renderMapping: (r): string => r.roleKind,
+const kindColumn = new TableColumn<RoleRowUI, string>('Kind / Resources', {
+  renderMapping: (r): string => r.col2,
   renderer: TableSimpleColumn,
-  comparator: (a, b): number => a.roleKind.localeCompare(b.roleKind),
+  comparator: (a, b): number => a.col2.localeCompare(b.col2),
 });
 
-const bindingNameColumn = new TableColumn<UserRoleUI, string>('Binding', {
-  renderMapping: (r): string => r.bindingName,
+const bindingColumn = new TableColumn<RoleRowUI, string>('Binding / Verbs', {
+  renderMapping: (r): string => r.col3,
   renderer: TableSimpleColumn,
-  comparator: (a, b): number => a.bindingName.localeCompare(b.bindingName),
+  comparator: (a, b): number => a.col3.localeCompare(b.col3),
 });
 
-const scopeColumn = new TableColumn<UserRoleUI, string>('Scope', {
-  renderMapping: (r): string => r.namespace ?? 'Cluster-wide',
+const scopeColumn = new TableColumn<RoleRowUI, string>('Scope / Res. Names', {
+  renderMapping: (r): string => r.col4,
   renderer: TableSimpleColumn,
-  comparator: (a, b): number => (a.namespace ?? '').localeCompare(b.namespace ?? ''),
+  comparator: (a, b): number => a.col4.localeCompare(b.col4),
 });
 
-const columns = [roleNameColumn, roleKindColumn, bindingNameColumn, scopeColumn];
-const row = new TableRow<UserRoleUI>({ selectable: (): boolean => false });
+const columns = [roleColumn, kindColumn, bindingColumn, scopeColumn];
+const row = new TableRow<RoleRowUI>({
+  selectable: (): boolean => false,
+  children: (r): RoleRowUI[] => r.children ?? [],
+});
 
 function goBack(): void {
   router.goto('/');

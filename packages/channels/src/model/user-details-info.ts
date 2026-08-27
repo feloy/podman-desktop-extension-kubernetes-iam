@@ -16,12 +16,21 @@
  * SPDX-License-Identifier: Apache-2.0
  ***********************************************************************/
 
+export interface UserRolePolicyRule {
+  apiGroups: string[];
+  resources: string[];
+  verbs: string[];
+  resourceNames?: string[];
+  nonResourceURLs?: string[];
+}
+
 export interface UserRoleInfo {
   bindingName: string;
   bindingKind: string;
   roleName: string;
   roleKind: string;
   namespace?: string;
+  rules: UserRolePolicyRule[];
 }
 
 export interface UserDetailsData {

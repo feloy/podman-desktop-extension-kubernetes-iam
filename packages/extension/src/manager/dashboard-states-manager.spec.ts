@@ -368,6 +368,7 @@ describe('getUserRoles', () => {
       roleName: 'pod-reader',
       roleKind: 'Role',
       namespace: 'default',
+      rules: [],
     });
   });
 
@@ -389,6 +390,7 @@ describe('getUserRoles', () => {
       bindingKind: 'ClusterRoleBinding',
       roleName: 'cluster-admin',
       roleKind: 'ClusterRole',
+      rules: [],
     });
   });
 
@@ -435,6 +437,56 @@ describe('getUserRoles', () => {
   test('returns empty array when no bindings match', () => {
     const roles = manager.getUserRoles('ctx1', 'alice');
     expect(roles).toHaveLength(0);
+  });
+
+  test('includes rules from matching role', () => {
+    manager.setRoles({
+      roles: [
+        {
+          contextName: 'ctx1',
+          namespace: 'default',
+          name: 'pod-reader',
+          rules: [{ apiGroups: [''], resources: ['pods'], verbs: ['get', 'list'] }],
+        },
+      ],
+    });
+    manager.setRoleBindings({
+      roleBindings: [
+        {
+          contextName: 'ctx1',
+          namespace: 'default',
+          name: 'rb1',
+          roleRef: { apiGroup: 'rbac.authorization.k8s.io', kind: 'Role', name: 'pod-reader' },
+          subjects: [{ kind: 'User', name: 'alice' }],
+        },
+      ],
+    });
+    const roles = manager.getUserRoles('ctx1', 'alice');
+    expect(roles[0]?.rules).toEqual([{ apiGroups: [''], resources: ['pods'], verbs: ['get', 'list'] }]);
+  });
+
+  test('includes rules from matching cluster role', () => {
+    manager.setClusterRoles({
+      clusterRoles: [
+        {
+          contextName: 'ctx1',
+          name: 'cluster-admin',
+          rules: [{ apiGroups: ['*'], resources: ['*'], verbs: ['*'] }],
+        },
+      ],
+    });
+    manager.setClusterRoleBindings({
+      clusterRoleBindings: [
+        {
+          contextName: 'ctx1',
+          name: 'crb1',
+          roleRef: { apiGroup: 'rbac.authorization.k8s.io', kind: 'ClusterRole', name: 'cluster-admin' },
+          subjects: [{ kind: 'User', name: 'alice' }],
+        },
+      ],
+    });
+    const roles = manager.getUserRoles('ctx1', 'alice');
+    expect(roles[0]?.rules).toEqual([{ apiGroups: ['*'], resources: ['*'], verbs: ['*'] }]);
   });
 
   test('returns roles from both role bindings and cluster role bindings', () => {

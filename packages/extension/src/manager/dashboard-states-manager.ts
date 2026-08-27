@@ -221,6 +221,7 @@ export class DashboardStatesManager implements Disposable {
         roleName: rb.roleRef.name,
         roleKind: rb.roleRef.kind,
         namespace: rb.namespace,
+        rules: this.#lookupRules(contextName, rb.roleRef.kind, rb.roleRef.name, rb.namespace),
       });
     }
 
@@ -232,9 +233,21 @@ export class DashboardStatesManager implements Disposable {
         bindingKind: 'ClusterRoleBinding',
         roleName: crb.roleRef.name,
         roleKind: crb.roleRef.kind,
+        rules: this.#lookupRules(contextName, crb.roleRef.kind, crb.roleRef.name),
       });
     }
 
     return roles;
+  }
+
+  #lookupRules(contextName: string, roleKind: string, roleName: string, namespace?: string): UserRoleInfo['rules'] {
+    if (roleKind === 'Role') {
+      const role = this.#roles.roles.find(
+        r => r.contextName === contextName && r.name === roleName && r.namespace === namespace,
+      );
+      return role?.rules ?? [];
+    }
+    const clusterRole = this.#clusterRoles.clusterRoles.find(r => r.contextName === contextName && r.name === roleName);
+    return clusterRole?.rules ?? [];
   }
 }

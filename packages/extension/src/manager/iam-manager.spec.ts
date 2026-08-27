@@ -165,5 +165,6 @@ test('getUserDetails logs telemetry and returns user details with roles', async 
     roleName: 'pod-reader',
     roleKind: 'Role',
     namespace: 'default',
+    rules: [],
   });
 });
