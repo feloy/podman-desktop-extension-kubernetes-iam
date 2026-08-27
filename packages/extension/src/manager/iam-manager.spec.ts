@@ -18,6 +18,7 @@
 
 import { beforeEach, expect, test, vi } from 'vitest';
 import { IamManager } from './iam-manager';
+import { DashboardStatesManager } from './dashboard-states-manager';
 import type { ExtensionContext, TelemetryLogger } from '@podman-desktop/api';
 import type { RpcExtension } from '@kubernetes-iam/rpc';
 import type { Container } from 'inversify';
@@ -135,4 +136,34 @@ test('generateKubeconfig logs telemetry and delegates to KubeconfigGenerator', a
 
   expect(telemetryLoggerMock.logUsage).toHaveBeenCalledWith('generateKubeconfig');
   expect(generateSpy).toHaveBeenCalledWith('alice', undefined);
+});
+
+test('getUserDetails logs telemetry and returns user details with roles', async () => {
+  const statesManager = container.get(DashboardStatesManager);
+  statesManager.setRoleBindings({
+    roleBindings: [
+      {
+        contextName: 'ctx1',
+        namespace: 'default',
+        name: 'rb1',
+        roleRef: { apiGroup: 'rbac.authorization.k8s.io', kind: 'Role', name: 'pod-reader' },
+        subjects: [{ kind: 'User', name: 'alice' }],
+      },
+    ],
+  });
+
+  const result = await manager.getUserDetails({ contextName: 'ctx1', userName: 'alice' });
+
+  expect(telemetryLoggerMock.logUsage).toHaveBeenCalledWith('getUserDetails');
+  expect(result.contextName).toBe('ctx1');
+  expect(result.name).toBe('alice');
+  expect(result.kind).toBe('User');
+  expect(result.roles).toHaveLength(1);
+  expect(result.roles[0]).toEqual({
+    bindingName: 'rb1',
+    bindingKind: 'RoleBinding',
+    roleName: 'pod-reader',
+    roleKind: 'Role',
+    namespace: 'default',
+  });
 });

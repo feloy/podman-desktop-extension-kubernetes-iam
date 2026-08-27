@@ -24,16 +24,22 @@ import type {
   CreateClusterRoleRequest,
   CreateClusterRoleBindingRequest,
   GenerateKubeconfigRequest,
+  GetUserDetailsRequest,
+  UserDetailsData,
 } from '@kubernetes-iam/channels';
 import { TelemetryLoggerSymbol } from '/@/inject/symbol';
 import type { TelemetryLogger } from '@podman-desktop/api';
 import { DashboardApiManager } from '/@/manager/dashboard-api-manager';
+import { DashboardStatesManager } from '/@/manager/dashboard-states-manager';
 import { KubeconfigGenerator } from '/@/manager/kubeconfig-generator';
 
 @injectable()
 export class IamManager implements IamApi {
   @inject(DashboardApiManager)
   private dashboardApiManager: DashboardApiManager;
+
+  @inject(DashboardStatesManager)
+  private dashboardStatesManager: DashboardStatesManager;
 
   @inject(KubeconfigGenerator)
   private kubeconfigGenerator: KubeconfigGenerator;
@@ -110,5 +116,19 @@ export class IamManager implements IamApi {
   async generateKubeconfig(request: GenerateKubeconfigRequest): Promise<void> {
     this.telemetryLogger.logUsage('generateKubeconfig');
     await this.kubeconfigGenerator.generate(request.username, request.expirationSeconds);
+  }
+
+  async getUserDetails(request: GetUserDetailsRequest): Promise<UserDetailsData> {
+    this.telemetryLogger.logUsage('getUserDetails');
+    const roles = this.dashboardStatesManager.getUserRoles(request.contextName, request.userName);
+    const users = this.dashboardStatesManager.getUsers();
+    const user = users.users.find(u => u.contextName === request.contextName && u.name === request.userName);
+    return {
+      contextName: request.contextName,
+      name: request.userName,
+      kind: user?.kind ?? 'User',
+      apiGroup: user?.apiGroup,
+      roles,
+    };
   }
 }

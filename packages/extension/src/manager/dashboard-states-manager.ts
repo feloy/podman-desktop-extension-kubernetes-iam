@@ -27,6 +27,7 @@ import type {
   ClusterRolesData,
   ClusterRoleBindingsData,
   UsersData,
+  UserRoleInfo,
 } from '@kubernetes-iam/channels';
 import {
   toRoleInfo,
@@ -127,7 +128,11 @@ export class DashboardStatesManager implements Disposable {
     this.#subscriptions.push(
       this.#subscriber.onResourceUpdate({ resourceName: 'rolebindings' }, event => {
         this.setRoleBindings({
-          roleBindings: event.resources.flatMap(r => r.items.map(item => toRoleBindingInfo(item, r.contextName ?? ''))),
+          roleBindings: event.resources.flatMap(r =>
+            r.items
+              .filter(item => item.kind === 'RoleBinding')
+              .map(item => toRoleBindingInfo(item, r.contextName ?? '')),
+          ),
         });
       }),
     );
@@ -135,7 +140,9 @@ export class DashboardStatesManager implements Disposable {
       this.#subscriber.onResourceUpdate({ resourceName: 'clusterrolebindings' }, event => {
         this.setClusterRoleBindings({
           clusterRoleBindings: event.resources.flatMap(r =>
-            r.items.map(item => toClusterRoleBindingInfo(item, r.contextName ?? '')),
+            r.items
+              .filter(item => item.kind === 'ClusterRoleBinding')
+              .map(item => toClusterRoleBindingInfo(item, r.contextName ?? '')),
           ),
         });
       }),
@@ -200,5 +207,34 @@ export class DashboardStatesManager implements Disposable {
 
   #recomputeUsers(): void {
     this.setUsers({ users: extractUniqueUsers(this.#roleBindings, this.#clusterRoleBindings) });
+  }
+
+  getUserRoles(contextName: string, userName: string): UserRoleInfo[] {
+    const roles: UserRoleInfo[] = [];
+
+    for (const rb of this.#roleBindings.roleBindings) {
+      if (rb.contextName !== contextName) continue;
+      if (!rb.subjects.some(s => s.kind === 'User' && s.name === userName)) continue;
+      roles.push({
+        bindingName: rb.name,
+        bindingKind: 'RoleBinding',
+        roleName: rb.roleRef.name,
+        roleKind: rb.roleRef.kind,
+        namespace: rb.namespace,
+      });
+    }
+
+    for (const crb of this.#clusterRoleBindings.clusterRoleBindings) {
+      if (crb.contextName !== contextName) continue;
+      if (!crb.subjects.some(s => s.kind === 'User' && s.name === userName)) continue;
+      roles.push({
+        bindingName: crb.name,
+        bindingKind: 'ClusterRoleBinding',
+        roleName: crb.roleRef.name,
+        roleKind: crb.roleRef.kind,
+      });
+    }
+
+    return roles;
   }
 }
