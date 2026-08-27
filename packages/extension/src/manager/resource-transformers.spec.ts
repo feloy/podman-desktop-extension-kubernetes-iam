@@ -44,9 +44,8 @@ describe('toRoleInfo', () => {
         },
       ],
     };
-    const result = toRoleInfo(item, 'ctx1');
+    const result = toRoleInfo(item);
     expect(result).toEqual({
-      contextName: 'ctx1',
       namespace: 'default',
       name: 'pod-reader',
       creationTimestamp: '2026-01-01T00:00:00Z',
@@ -64,9 +63,8 @@ describe('toRoleInfo', () => {
 
   test('handles missing metadata and rules', () => {
     const item: KubernetesObject = {};
-    const result = toRoleInfo(item, 'ctx1');
+    const result = toRoleInfo(item);
     expect(result).toEqual({
-      contextName: 'ctx1',
       namespace: '',
       name: '',
       creationTimestamp: undefined,
@@ -84,7 +82,7 @@ describe('toClusterRoleInfo', () => {
         clusterRoleSelectors: [{ matchLabels: { 'rbac.example.com/aggregate-to-admin': 'true' } }],
       },
     };
-    const result = toClusterRoleInfo(item, 'ctx1');
+    const result = toClusterRoleInfo(item);
     expect(result.name).toBe('admin');
     expect(result.aggregationLabels).toEqual({ 'rbac.example.com/aggregate-to-admin': 'true' });
   });
@@ -94,7 +92,7 @@ describe('toClusterRoleInfo', () => {
       metadata: { name: 'view' },
       rules: [],
     };
-    const result = toClusterRoleInfo(item, 'ctx1');
+    const result = toClusterRoleInfo(item);
     expect(result.aggregationLabels).toBeUndefined();
   });
 });
@@ -109,9 +107,8 @@ describe('toRoleBindingInfo', () => {
         { kind: 'ServiceAccount', name: 'default', namespace: 'kube-system' },
       ],
     };
-    const result = toRoleBindingInfo(item, 'ctx1');
+    const result = toRoleBindingInfo(item);
     expect(result).toEqual({
-      contextName: 'ctx1',
       namespace: 'default',
       name: 'read-pods',
       creationTimestamp: undefined,
@@ -128,7 +125,7 @@ describe('toRoleBindingInfo', () => {
       metadata: { name: 'empty-binding', namespace: 'ns1' },
       roleRef: { apiGroup: '', kind: 'Role', name: 'role1' },
     };
-    const result = toRoleBindingInfo(item, 'ctx1');
+    const result = toRoleBindingInfo(item);
     expect(result.subjects).toEqual([]);
   });
 });
@@ -140,9 +137,8 @@ describe('toClusterRoleBindingInfo', () => {
       roleRef: { apiGroup: 'rbac.authorization.k8s.io', kind: 'ClusterRole', name: 'cluster-admin' },
       subjects: [{ kind: 'Group', name: 'admins', apiGroup: 'rbac.authorization.k8s.io' }],
     };
-    const result = toClusterRoleBindingInfo(item, 'ctx1');
+    const result = toClusterRoleBindingInfo(item);
     expect(result).toEqual({
-      contextName: 'ctx1',
       name: 'cluster-admin-binding',
       creationTimestamp: '2026-06-01T00:00:00Z',
       roleRef: { apiGroup: 'rbac.authorization.k8s.io', kind: 'ClusterRole', name: 'cluster-admin' },
@@ -156,7 +152,6 @@ describe('extractUniqueUsers', () => {
     const roleBindings = {
       roleBindings: [
         {
-          contextName: 'ctx1',
           namespace: 'default',
           name: 'rb1',
           roleRef: { apiGroup: '', kind: 'Role', name: 'role1' },
@@ -170,7 +165,6 @@ describe('extractUniqueUsers', () => {
     const clusterRoleBindings = {
       clusterRoleBindings: [
         {
-          contextName: 'ctx1',
           name: 'crb1',
           roleRef: { apiGroup: '', kind: 'ClusterRole', name: 'cr1' },
           subjects: [
@@ -182,7 +176,7 @@ describe('extractUniqueUsers', () => {
     };
     const users = extractUniqueUsers(roleBindings, clusterRoleBindings);
     expect(users).toHaveLength(1);
-    expect(users).toEqual([{ contextName: 'ctx1', kind: 'User', name: 'alice', apiGroup: undefined }]);
+    expect(users).toEqual([{ kind: 'User', name: 'alice', apiGroup: undefined }]);
   });
 
   test('returns empty array when no bindings', () => {
@@ -194,7 +188,6 @@ describe('extractUniqueUsers', () => {
     const roleBindings = {
       roleBindings: [
         {
-          contextName: 'ctx1',
           namespace: 'ns1',
           name: 'rb1',
           roleRef: { apiGroup: '', kind: 'Role', name: 'role1' },
@@ -211,28 +204,25 @@ describe('extractUniqueUsers', () => {
     expect(users[0].name).toBe('bob');
   });
 
-  test('treats same user in different contexts as separate entries', () => {
+  test('reports a user bound by several role bindings only once', () => {
     const roleBindings = {
       roleBindings: [
         {
-          contextName: 'ctx1',
           namespace: 'default',
           name: 'rb1',
           roleRef: { apiGroup: '', kind: 'Role', name: 'role1' },
           subjects: [{ kind: 'User', name: 'alice' }],
         },
         {
-          contextName: 'ctx2',
-          namespace: 'default',
+          namespace: 'other',
           name: 'rb2',
-          roleRef: { apiGroup: '', kind: 'Role', name: 'role1' },
+          roleRef: { apiGroup: '', kind: 'Role', name: 'role2' },
           subjects: [{ kind: 'User', name: 'alice' }],
         },
       ],
     };
     const users = extractUniqueUsers(roleBindings, { clusterRoleBindings: [] });
-    expect(users).toHaveLength(2);
-    expect(users[0].contextName).toBe('ctx1');
-    expect(users[1].contextName).toBe('ctx2');
+    expect(users).toHaveLength(1);
+    expect(users[0].name).toBe('alice');
   });
 });

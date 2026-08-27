@@ -19,7 +19,6 @@
 import type { RoleRefInfo, SubjectInfo } from '/@/model/role-binding-info';
 
 export interface ClusterRoleBindingInfo {
-  contextName: string;
   name: string;
   creationTimestamp?: string;
   roleRef: RoleRefInfo;

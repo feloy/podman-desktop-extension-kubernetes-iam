@@ -114,14 +114,14 @@ export class DashboardStatesManager implements Disposable {
     this.#subscriptions.push(
       this.#subscriber.onResourceUpdate({ resourceName: 'roles' }, event => {
         this.setRoles({
-          roles: event.resources.flatMap(r => r.items.map(item => toRoleInfo(item, r.contextName ?? ''))),
+          roles: event.resources.flatMap(r => r.items.map(item => toRoleInfo(item))),
         });
       }),
     );
     this.#subscriptions.push(
       this.#subscriber.onResourceUpdate({ resourceName: 'clusterroles' }, event => {
         this.setClusterRoles({
-          clusterRoles: event.resources.flatMap(r => r.items.map(item => toClusterRoleInfo(item, r.contextName ?? ''))),
+          clusterRoles: event.resources.flatMap(r => r.items.map(item => toClusterRoleInfo(item))),
         });
       }),
     );
@@ -129,9 +129,7 @@ export class DashboardStatesManager implements Disposable {
       this.#subscriber.onResourceUpdate({ resourceName: 'rolebindings' }, event => {
         this.setRoleBindings({
           roleBindings: event.resources.flatMap(r =>
-            r.items
-              .filter(item => item.kind === 'RoleBinding')
-              .map(item => toRoleBindingInfo(item, r.contextName ?? '')),
+            r.items.filter(item => item.kind === 'RoleBinding').map(item => toRoleBindingInfo(item)),
           ),
         });
       }),
@@ -140,9 +138,7 @@ export class DashboardStatesManager implements Disposable {
       this.#subscriber.onResourceUpdate({ resourceName: 'clusterrolebindings' }, event => {
         this.setClusterRoleBindings({
           clusterRoleBindings: event.resources.flatMap(r =>
-            r.items
-              .filter(item => item.kind === 'ClusterRoleBinding')
-              .map(item => toClusterRoleBindingInfo(item, r.contextName ?? '')),
+            r.items.filter(item => item.kind === 'ClusterRoleBinding').map(item => toClusterRoleBindingInfo(item)),
           ),
         });
       }),
@@ -209,11 +205,10 @@ export class DashboardStatesManager implements Disposable {
     this.setUsers({ users: extractUniqueUsers(this.#roleBindings, this.#clusterRoleBindings) });
   }
 
-  getUserRoles(contextName: string, userName: string): UserRoleInfo[] {
+  getUserRoles(userName: string): UserRoleInfo[] {
     const roles: UserRoleInfo[] = [];
 
     for (const rb of this.#roleBindings.roleBindings) {
-      if (rb.contextName !== contextName) continue;
       if (!rb.subjects.some(s => s.kind === 'User' && s.name === userName)) continue;
       roles.push({
         bindingName: rb.name,
@@ -221,33 +216,30 @@ export class DashboardStatesManager implements Disposable {
         roleName: rb.roleRef.name,
         roleKind: rb.roleRef.kind,
         namespace: rb.namespace,
-        rules: this.#lookupRules(contextName, rb.roleRef.kind, rb.roleRef.name, rb.namespace),
+        rules: this.#lookupRules(rb.roleRef.kind, rb.roleRef.name, rb.namespace),
       });
     }
 
     for (const crb of this.#clusterRoleBindings.clusterRoleBindings) {
-      if (crb.contextName !== contextName) continue;
       if (!crb.subjects.some(s => s.kind === 'User' && s.name === userName)) continue;
       roles.push({
         bindingName: crb.name,
         bindingKind: 'ClusterRoleBinding',
         roleName: crb.roleRef.name,
         roleKind: crb.roleRef.kind,
-        rules: this.#lookupRules(contextName, crb.roleRef.kind, crb.roleRef.name),
+        rules: this.#lookupRules(crb.roleRef.kind, crb.roleRef.name),
       });
     }
 
     return roles;
   }
 
-  #lookupRules(contextName: string, roleKind: string, roleName: string, namespace?: string): UserRoleInfo['rules'] {
+  #lookupRules(roleKind: string, roleName: string, namespace?: string): UserRoleInfo['rules'] {
     if (roleKind === 'Role') {
-      const role = this.#roles.roles.find(
-        r => r.contextName === contextName && r.name === roleName && r.namespace === namespace,
-      );
+      const role = this.#roles.roles.find(r => r.name === roleName && r.namespace === namespace);
       return role?.rules ?? [];
     }
-    const clusterRole = this.#clusterRoles.clusterRoles.find(r => r.contextName === contextName && r.name === roleName);
+    const clusterRole = this.#clusterRoles.clusterRoles.find(r => r.name === roleName);
     return clusterRole?.rules ?? [];
   }
 }

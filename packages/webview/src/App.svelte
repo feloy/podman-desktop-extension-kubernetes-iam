@@ -7,9 +7,8 @@ import UserDetails from '/@/component/UserDetails.svelte';
 
 <IamDashboard>
   <Route path="/*" firstmatch let:meta>
-    <Route path="/users/:contextName/:name" let:meta>
-      {@const ctx = decodeURIComponent(meta.params.contextName)}
-      <UserDetails contextName={ctx === '-' ? '' : ctx} name={decodeURIComponent(meta.params.name)} />
+    <Route path="/users/:name" let:meta>
+      <UserDetails name={decodeURIComponent(meta.params.name)} />
     </Route>
     <Route path="/">
       <UsersList />

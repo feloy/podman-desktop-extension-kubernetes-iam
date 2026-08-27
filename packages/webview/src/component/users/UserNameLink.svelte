@@ -5,8 +5,7 @@ import type { UserUI } from './UserUI';
 const { object }: { object: UserUI } = $props();
 
 function onClick(): void {
-  const ctx = encodeURIComponent(object.contextName || '-');
-  router.goto(`/users/${ctx}/${encodeURIComponent(object.name)}`);
+  router.goto(`/users/${encodeURIComponent(object.name)}`);
 }
 </script>
 

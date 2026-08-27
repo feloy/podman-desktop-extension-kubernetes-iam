@@ -49,66 +49,66 @@ export class IamManager implements IamApi {
 
   async createRole(request: CreateRoleRequest): Promise<void> {
     this.telemetryLogger.logUsage('createRole');
-    console.log('createRole', request.contextName, request.namespace, request.name);
+    console.log('createRole', request.namespace, request.name);
     // TODO: delegate to Dashboard API once RBAC capabilities are available
   }
 
   async updateRole(request: CreateRoleRequest): Promise<void> {
     this.telemetryLogger.logUsage('updateRole');
-    console.log('updateRole', request.contextName, request.namespace, request.name);
+    console.log('updateRole', request.namespace, request.name);
   }
 
-  async deleteRole(contextName: string, namespace: string, name: string): Promise<void> {
+  async deleteRole(namespace: string, name: string): Promise<void> {
     this.telemetryLogger.logUsage('deleteRole');
-    console.log('deleteRole', contextName, namespace, name);
+    console.log('deleteRole', namespace, name);
   }
 
   async createRoleBinding(request: CreateRoleBindingRequest): Promise<void> {
     this.telemetryLogger.logUsage('createRoleBinding');
-    console.log('createRoleBinding', request.contextName, request.namespace, request.name);
+    console.log('createRoleBinding', request.namespace, request.name);
   }
 
   async updateRoleBinding(request: CreateRoleBindingRequest): Promise<void> {
     this.telemetryLogger.logUsage('updateRoleBinding');
-    console.log('updateRoleBinding', request.contextName, request.namespace, request.name);
+    console.log('updateRoleBinding', request.namespace, request.name);
   }
 
-  async deleteRoleBinding(contextName: string, namespace: string, name: string): Promise<void> {
+  async deleteRoleBinding(namespace: string, name: string): Promise<void> {
     this.telemetryLogger.logUsage('deleteRoleBinding');
-    console.log('deleteRoleBinding', contextName, namespace, name);
+    console.log('deleteRoleBinding', namespace, name);
   }
 
   async createClusterRole(request: CreateClusterRoleRequest): Promise<void> {
     this.telemetryLogger.logUsage('createClusterRole');
-    console.log('createClusterRole', request.contextName, request.name);
+    console.log('createClusterRole', request.name);
   }
 
   async updateClusterRole(request: CreateClusterRoleRequest): Promise<void> {
     this.telemetryLogger.logUsage('updateClusterRole');
-    console.log('updateClusterRole', request.contextName, request.name);
+    console.log('updateClusterRole', request.name);
   }
 
-  async deleteClusterRole(contextName: string, name: string): Promise<void> {
+  async deleteClusterRole(name: string): Promise<void> {
     this.telemetryLogger.logUsage('deleteClusterRole');
-    console.log('deleteClusterRole', contextName, name);
+    console.log('deleteClusterRole', name);
   }
 
   async createClusterRoleBinding(request: CreateClusterRoleBindingRequest): Promise<void> {
     this.telemetryLogger.logUsage('createClusterRoleBinding');
-    console.log('createClusterRoleBinding', request.contextName, request.name);
+    console.log('createClusterRoleBinding', request.name);
   }
 
   async updateClusterRoleBinding(request: CreateClusterRoleBindingRequest): Promise<void> {
     this.telemetryLogger.logUsage('updateClusterRoleBinding');
-    console.log('updateClusterRoleBinding', request.contextName, request.name);
+    console.log('updateClusterRoleBinding', request.name);
   }
 
-  async deleteClusterRoleBinding(contextName: string, name: string): Promise<void> {
+  async deleteClusterRoleBinding(name: string): Promise<void> {
     this.telemetryLogger.logUsage('deleteClusterRoleBinding');
-    console.log('deleteClusterRoleBinding', contextName, name);
+    console.log('deleteClusterRoleBinding', name);
   }
 
-  async refreshRbacData(_contextName: string): Promise<void> {
+  async refreshRbacData(): Promise<void> {
     this.telemetryLogger.logUsage('refreshRbacData');
     // TODO: delegate to Dashboard API once RBAC capabilities are available
   }
@@ -120,11 +120,10 @@ export class IamManager implements IamApi {
 
   async getUserDetails(request: GetUserDetailsRequest): Promise<UserDetailsData> {
     this.telemetryLogger.logUsage('getUserDetails');
-    const roles = this.dashboardStatesManager.getUserRoles(request.contextName, request.userName);
+    const roles = this.dashboardStatesManager.getUserRoles(request.userName);
     const users = this.dashboardStatesManager.getUsers();
-    const user = users.users.find(u => u.contextName === request.contextName && u.name === request.userName);
+    const user = users.users.find(u => u.name === request.userName);
     return {
-      contextName: request.contextName,
       name: request.userName,
       kind: user?.kind ?? 'User',
       apiGroup: user?.apiGroup,

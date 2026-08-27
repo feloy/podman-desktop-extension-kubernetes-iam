@@ -21,14 +21,12 @@ import type { RoleRefInfo, SubjectInfo } from '/@/model/role-binding-info';
 import type { GetUserDetailsRequest, UserDetailsData } from '/@/model/user-details-info';
 
 export interface CreateRoleRequest {
-  contextName: string;
   namespace: string;
   name: string;
   rules: PolicyRuleInfo[];
 }
 
 export interface CreateRoleBindingRequest {
-  contextName: string;
   namespace: string;
   name: string;
   roleRef: RoleRefInfo;
@@ -36,14 +34,12 @@ export interface CreateRoleBindingRequest {
 }
 
 export interface CreateClusterRoleRequest {
-  contextName: string;
   name: string;
   rules: PolicyRuleInfo[];
   aggregationLabels?: Record<string, string>;
 }
 
 export interface CreateClusterRoleBindingRequest {
-  contextName: string;
   name: string;
   roleRef: RoleRefInfo;
   subjects: SubjectInfo[];
@@ -56,24 +52,29 @@ export interface GenerateKubeconfigRequest {
 
 export const IamApi = Symbol.for('IamApi');
 
+/**
+ * The extension operates exclusively on the current Kubernetes context: the Dashboard
+ * write APIs (`patchResources`, `deleteResource`, `patchSubresource`) target it implicitly,
+ * so none of these operations accept a context name.
+ */
 export interface IamApi {
   createRole(request: CreateRoleRequest): Promise<void>;
   updateRole(request: CreateRoleRequest): Promise<void>;
-  deleteRole(contextName: string, namespace: string, name: string): Promise<void>;
+  deleteRole(namespace: string, name: string): Promise<void>;
 
   createRoleBinding(request: CreateRoleBindingRequest): Promise<void>;
   updateRoleBinding(request: CreateRoleBindingRequest): Promise<void>;
-  deleteRoleBinding(contextName: string, namespace: string, name: string): Promise<void>;
+  deleteRoleBinding(namespace: string, name: string): Promise<void>;
 
   createClusterRole(request: CreateClusterRoleRequest): Promise<void>;
   updateClusterRole(request: CreateClusterRoleRequest): Promise<void>;
-  deleteClusterRole(contextName: string, name: string): Promise<void>;
+  deleteClusterRole(name: string): Promise<void>;
 
   createClusterRoleBinding(request: CreateClusterRoleBindingRequest): Promise<void>;
   updateClusterRoleBinding(request: CreateClusterRoleBindingRequest): Promise<void>;
-  deleteClusterRoleBinding(contextName: string, name: string): Promise<void>;
+  deleteClusterRoleBinding(name: string): Promise<void>;
 
-  refreshRbacData(contextName: string): Promise<void>;
+  refreshRbacData(): Promise<void>;
 
   generateKubeconfig(request: GenerateKubeconfigRequest): Promise<void>;
 

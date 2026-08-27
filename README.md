@@ -9,7 +9,6 @@ Users are not managed directly by the cluster, but they are referenced in RoleBi
 - List all users referenced in RoleBindings and ClusterRoleBindings across the cluster
 - Click on a user to view and manage their Roles and ClusterRoles assignments
 - Build kubeconfig files for users
-- Multi-context support
 
 ## Installation
 

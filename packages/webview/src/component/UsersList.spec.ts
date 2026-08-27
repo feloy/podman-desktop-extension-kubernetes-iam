@@ -52,8 +52,8 @@ describe('UsersList', () => {
   test('passes user data to Table component', () => {
     usersStateMock.setData({
       users: [
-        { contextName: 'ctx1', kind: 'User', name: 'alice' },
-        { contextName: 'ctx1', kind: 'Group', name: 'developers' },
+        { kind: 'User', name: 'alice' },
+        { kind: 'Group', name: 'developers' },
       ],
     });
     render(UsersList);
@@ -61,12 +61,12 @@ describe('UsersList', () => {
     expect(uiSvelte.Table).toHaveBeenCalled();
     const props = vi.mocked(uiSvelte.Table as unknown as SvelteComponent).mock.calls[0][1];
     expect(props.data).toHaveLength(2);
-    expect(props.data[0]).toMatchObject({ name: 'alice', kind: 'User', contextName: 'ctx1' });
-    expect(props.data[1]).toMatchObject({ name: 'developers', kind: 'Group', contextName: 'ctx1' });
+    expect(props.data[0]).toMatchObject({ name: 'alice', kind: 'User' });
+    expect(props.data[1]).toMatchObject({ name: 'developers', kind: 'Group' });
   });
 
   test('table has Name, Type and Actions columns', () => {
-    usersStateMock.setData({ users: [{ contextName: 'ctx1', kind: 'User', name: 'alice' }] });
+    usersStateMock.setData({ users: [{ kind: 'User', name: 'alice' }] });
     render(UsersList);
 
     expect(uiSvelte.Table).toHaveBeenCalled();
@@ -76,7 +76,7 @@ describe('UsersList', () => {
   });
 
   test('table kind is set to user', () => {
-    usersStateMock.setData({ users: [{ contextName: 'ctx1', kind: 'User', name: 'alice' }] });
+    usersStateMock.setData({ users: [{ kind: 'User', name: 'alice' }] });
     render(UsersList);
 
     expect(uiSvelte.Table).toHaveBeenCalled();

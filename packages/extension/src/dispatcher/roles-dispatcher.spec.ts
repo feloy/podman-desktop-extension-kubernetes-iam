@@ -38,7 +38,6 @@ test('getData should return the roles data', () => {
   const rolesData: RolesData = {
     roles: [
       {
-        contextName: 'context1',
         namespace: 'default',
         name: 'my-role',
         rules: [

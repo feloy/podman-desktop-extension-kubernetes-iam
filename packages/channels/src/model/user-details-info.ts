@@ -34,7 +34,6 @@ export interface UserRoleInfo {
 }
 
 export interface UserDetailsData {
-  contextName: string;
   name: string;
   kind: string;
   apiGroup?: string;
@@ -42,6 +41,5 @@ export interface UserDetailsData {
 }
 
 export interface GetUserDetailsRequest {
-  contextName: string;
   userName: string;
 }
