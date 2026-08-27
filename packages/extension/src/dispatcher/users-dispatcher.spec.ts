@@ -38,10 +38,12 @@ test('getData should return the users data', () => {
   const usersData: UsersData = {
     users: [
       {
+        contextName: 'ctx1',
         kind: 'User',
         name: 'alice',
       },
       {
+        contextName: 'ctx1',
         kind: 'Group',
         name: 'devs',
         apiGroup: 'rbac.authorization.k8s.io',

@@ -23,9 +23,11 @@ import { ChannelSubscriber } from '/@/manager/channel-subscriber';
 import { Dispatcher } from '/@/manager/dispatcher';
 import { DashboardStatesManager } from './dashboard-states-manager';
 import { DashboardApiManager } from '/@/manager/dashboard-api-manager';
+import { KubeconfigGenerator } from '/@/manager/kubeconfig-generator';
 
 const managersModule = new ContainerModule(options => {
   options.bind<IamManager>(IamManager).toSelf().inSingletonScope();
+  options.bind<KubeconfigGenerator>(KubeconfigGenerator).toSelf().inSingletonScope();
   options.bind<ChannelSubscriber>(ChannelSubscriber).toSelf().inSingletonScope();
   options.bind<Dispatcher>(Dispatcher).toSelf().inSingletonScope();
   options.bind<DashboardStatesManager>(DashboardStatesManager).toSelf().inSingletonScope();

@@ -52,8 +52,8 @@ describe('UsersList', () => {
   test('passes user data to Table component', () => {
     usersStateMock.setData({
       users: [
-        { kind: 'User', name: 'alice' },
-        { kind: 'Group', name: 'developers' },
+        { contextName: 'ctx1', kind: 'User', name: 'alice' },
+        { contextName: 'ctx1', kind: 'Group', name: 'developers' },
       ],
     });
     render(UsersList);
@@ -61,34 +61,22 @@ describe('UsersList', () => {
     expect(uiSvelte.Table).toHaveBeenCalled();
     const props = vi.mocked(uiSvelte.Table as unknown as SvelteComponent).mock.calls[0][1];
     expect(props.data).toHaveLength(2);
-    expect(props.data[0]).toMatchObject({ name: 'alice', kind: 'User' });
-    expect(props.data[1]).toMatchObject({ name: 'developers', kind: 'Group' });
+    expect(props.data[0]).toMatchObject({ name: 'alice', kind: 'User', contextName: 'ctx1' });
+    expect(props.data[1]).toMatchObject({ name: 'developers', kind: 'Group', contextName: 'ctx1' });
   });
 
-  test('passes namespace in user data', () => {
-    usersStateMock.setData({
-      users: [{ kind: 'ServiceAccount', name: 'default', namespace: 'kube-system' }],
-    });
-    render(UsersList);
-
-    expect(uiSvelte.Table).toHaveBeenCalled();
-    const props = vi.mocked(uiSvelte.Table as unknown as SvelteComponent).mock.calls[0][1];
-    expect(props.data).toHaveLength(1);
-    expect(props.data[0]).toMatchObject({ name: 'default', kind: 'ServiceAccount', namespace: 'kube-system' });
-  });
-
-  test('table has Namespace, Name, Type and Scope columns', () => {
-    usersStateMock.setData({ users: [{ kind: 'User', name: 'alice' }] });
+  test('table has Name, Type and Actions columns', () => {
+    usersStateMock.setData({ users: [{ contextName: 'ctx1', kind: 'User', name: 'alice' }] });
     render(UsersList);
 
     expect(uiSvelte.Table).toHaveBeenCalled();
     const props = vi.mocked(uiSvelte.Table as unknown as SvelteComponent).mock.calls[0][1];
     const columnTitles = (props.columns as { title: string }[]).map(c => c.title);
-    expect(columnTitles).toEqual(['Namespace', 'Name', 'Type', 'Scope']);
+    expect(columnTitles).toEqual(['Name', 'Type', 'Actions']);
   });
 
   test('table kind is set to user', () => {
-    usersStateMock.setData({ users: [{ kind: 'User', name: 'alice' }] });
+    usersStateMock.setData({ users: [{ contextName: 'ctx1', kind: 'User', name: 'alice' }] });
     render(UsersList);
 
     expect(uiSvelte.Table).toHaveBeenCalled();

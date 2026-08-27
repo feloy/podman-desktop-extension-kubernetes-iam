@@ -430,7 +430,7 @@ describe('RBAC data setters and getters', () => {
     const callback = vi.fn();
     manager.onUsersChange(callback);
     const newUsers: UsersData = {
-      users: [{ kind: 'User', name: 'alice' }],
+      users: [{ contextName: 'ctx1', kind: 'User', name: 'alice' }],
     };
     manager.setUsers(newUsers);
     expect(manager.getUsers()).toEqual(newUsers);

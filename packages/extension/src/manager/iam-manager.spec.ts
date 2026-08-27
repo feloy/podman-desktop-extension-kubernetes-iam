@@ -125,3 +125,14 @@ test('refreshRbacData logs telemetry', async () => {
   await manager.refreshRbacData('ctx1');
   expect(telemetryLoggerMock.logUsage).toHaveBeenCalledWith('refreshRbacData');
 });
+
+test('generateKubeconfig logs telemetry and delegates to KubeconfigGenerator', async () => {
+  const { KubeconfigGenerator } = await import('./kubeconfig-generator');
+  const kubeconfigGenerator = container.get(KubeconfigGenerator);
+  const generateSpy = vi.spyOn(kubeconfigGenerator, 'generate').mockResolvedValue();
+
+  await manager.generateKubeconfig({ username: 'alice' });
+
+  expect(telemetryLoggerMock.logUsage).toHaveBeenCalledWith('generateKubeconfig');
+  expect(generateSpy).toHaveBeenCalledWith('alice', undefined);
+});
