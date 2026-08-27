@@ -51,6 +51,7 @@ beforeEach(() => {
     createClusterRoleForUser: vi.fn().mockResolvedValue(undefined),
     addRuleToRole: vi.fn().mockResolvedValue(undefined),
     addRuleToClusterRole: vi.fn().mockResolvedValue(undefined),
+    revokeRoleFromUser: vi.fn().mockResolvedValue(undefined),
   } as unknown as IamApi);
   statesMocks.reset();
   rolesStateMock = new FakeStateObject();
@@ -99,6 +100,41 @@ async function openRuleDialog(role: { kind: string; name: string; namespace?: st
   row?.onAddRule?.();
 
   await waitFor(() => expect(screen.getByRole('dialog', { name: 'Add rule' })).toBeDefined());
+}
+
+/** The rows the mocked table was last handed. */
+function lastRows(): RoleRowUI[] {
+  const calls = vi.mocked(uiSvelte.Table as unknown as SvelteComponent).mock.calls;
+  return calls[calls.length - 1][1].data as RoleRowUI[];
+}
+
+/**
+ * Renders the page on a user holding a role granted through the given binding, and revokes
+ * it through the callback its row carries: the table is mocked, so the cell rendering the
+ * action is never mounted.
+ */
+async function revokeRole(binding: { roleKind: string; bindingKind: string; namespace?: string }): Promise<void> {
+  vi.mocked(remoteMocks.get(API_IAM).getUserDetails).mockResolvedValue({
+    name: 'alice',
+    kind: 'User',
+    roles: [
+      {
+        bindingName: 'rb1',
+        bindingKind: binding.bindingKind,
+        roleName: 'pod-reader',
+        roleKind: binding.roleKind,
+        namespace: binding.namespace,
+        rules: [{ apiGroups: [''], resources: ['pods'], verbs: ['get'] }],
+      },
+    ],
+  });
+  await renderDetails();
+
+  await waitFor(() => expect(uiSvelte.Table).toHaveBeenCalled());
+  const row = lastRows()[0];
+  expect(row.onRevoke).toBeDefined();
+  row.onRevoke?.();
+  await waitFor(() => expect(remoteMocks.get(API_IAM).revokeRoleFromUser).toHaveBeenCalled());
 }
 
 describe('UserDetails', () => {
@@ -290,5 +326,44 @@ describe('UserDetails', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'Add' }));
 
     await waitFor(() => expect(screen.getByText('No role named pod-reader')).toBeDefined());
+  });
+
+  test('revokes a role through the binding granting it to the user', async () => {
+    await revokeRole({ roleKind: 'Role', bindingKind: 'RoleBinding', namespace: 'default' });
+
+    expect(remoteMocks.get(API_IAM).revokeRoleFromUser).toHaveBeenCalledWith({
+      username: 'alice',
+      bindingKind: 'RoleBinding',
+      bindingName: 'rb1',
+      namespace: 'default',
+    });
+  });
+
+  test('revokes a cluster role through its cluster-wide binding, which has no namespace', async () => {
+    await revokeRole({ roleKind: 'ClusterRole', bindingKind: 'ClusterRoleBinding' });
+
+    expect(remoteMocks.get(API_IAM).revokeRoleFromUser).toHaveBeenCalledWith({
+      username: 'alice',
+      bindingKind: 'ClusterRoleBinding',
+      bindingName: 'rb1',
+      namespace: undefined,
+    });
+  });
+
+  test('revokes a cluster role bound through a namespaced binding from that binding', async () => {
+    await revokeRole({ roleKind: 'ClusterRole', bindingKind: 'RoleBinding', namespace: 'default' });
+
+    expect(remoteMocks.get(API_IAM).revokeRoleFromUser).toHaveBeenCalledWith({
+      username: 'alice',
+      bindingKind: 'RoleBinding',
+      bindingName: 'rb1',
+      namespace: 'default',
+    });
+  });
+
+  test('offers the revoke action on the role rows only', async () => {
+    await revokeRole({ roleKind: 'Role', bindingKind: 'RoleBinding', namespace: 'default' });
+
+    expect(lastRows()[0].children?.[0].onRevoke).toBeUndefined();
   });
 });

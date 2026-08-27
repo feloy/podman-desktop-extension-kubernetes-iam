@@ -52,6 +52,7 @@ const plugin = {
   },
   window: {
     showInformationMessage: vi.fn(),
+    showWarningMessage: vi.fn(),
     showInputBox: vi.fn(),
     showErrorMessage: vi.fn(),
     withProgress: vi.fn(),

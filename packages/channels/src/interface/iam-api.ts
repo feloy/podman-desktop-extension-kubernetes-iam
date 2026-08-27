@@ -71,6 +71,15 @@ export interface AddClusterRoleRuleRequest {
   rule: PolicyRuleInfo;
 }
 
+export interface RevokeRoleFromUserRequest {
+  username: string;
+  /** `RoleBinding` or `ClusterRoleBinding`. */
+  bindingKind: string;
+  bindingName: string;
+  /** The namespace of the binding, set when the binding is a RoleBinding. */
+  namespace?: string;
+}
+
 export interface GenerateKubeconfigRequest {
   username: string;
   expirationSeconds?: number;
@@ -120,6 +129,15 @@ export interface IamApi {
    * and a ClusterRoleBinding granting it to the user.
    */
   createClusterRoleForUser(request: CreateClusterRoleForUserRequest): Promise<void>;
+
+  /**
+   * Revokes from the user the role a binding grants it, asking the operator to confirm first.
+   *
+   * The binding is deleted when the user is its only subject, and only that subject is
+   * removed from it otherwise, so the role stays granted to the subjects that share the
+   * binding. The role itself is left in place either way.
+   */
+  revokeRoleFromUser(request: RevokeRoleFromUserRequest): Promise<void>;
 
   /**
    * Appends a rule to the rules of an existing Role.
