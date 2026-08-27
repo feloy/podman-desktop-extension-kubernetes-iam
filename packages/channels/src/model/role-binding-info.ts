@@ -30,7 +30,6 @@ export interface SubjectInfo {
 }
 
 export interface RoleBindingInfo {
-  contextName: string;
   namespace: string;
   name: string;
   creationTimestamp?: string;

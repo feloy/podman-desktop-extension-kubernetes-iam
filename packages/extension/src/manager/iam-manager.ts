@@ -120,14 +120,10 @@ export class IamManager implements IamApi {
 
   async getUserDetails(request: GetUserDetailsRequest): Promise<UserDetailsData> {
     this.telemetryLogger.logUsage('getUserDetails');
-    // Users are derived from the bindings of the current context, so the stored entry
-    // is the authoritative source for the context the user belongs to.
+    const roles = this.dashboardStatesManager.getUserRoles(request.userName);
     const users = this.dashboardStatesManager.getUsers();
     const user = users.users.find(u => u.name === request.userName);
-    const contextName = user?.contextName ?? '';
-    const roles = this.dashboardStatesManager.getUserRoles(contextName, request.userName);
     return {
-      contextName,
       name: request.userName,
       kind: user?.kind ?? 'User',
       apiGroup: user?.apiGroup,

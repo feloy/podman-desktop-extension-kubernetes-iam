@@ -17,7 +17,6 @@
  ***********************************************************************/
 
 export interface UserInfo {
-  contextName: string;
   kind: string;
   name: string;
   apiGroup?: string;

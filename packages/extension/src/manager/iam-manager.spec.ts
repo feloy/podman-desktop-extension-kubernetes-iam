@@ -139,7 +139,6 @@ test('getUserDetails logs telemetry and returns user details with roles', async 
   statesManager.setRoleBindings({
     roleBindings: [
       {
-        contextName: 'ctx1',
         namespace: 'default',
         name: 'rb1',
         roleRef: { apiGroup: 'rbac.authorization.k8s.io', kind: 'Role', name: 'pod-reader' },
@@ -148,12 +147,11 @@ test('getUserDetails logs telemetry and returns user details with roles', async 
     ],
   });
 
-  statesManager.setUsers({ users: [{ contextName: 'ctx1', kind: 'User', name: 'alice' }] });
+  statesManager.setUsers({ users: [{ kind: 'User', name: 'alice' }] });
 
   const result = await manager.getUserDetails({ userName: 'alice' });
 
   expect(telemetryLoggerMock.logUsage).toHaveBeenCalledWith('getUserDetails');
-  expect(result.contextName).toBe('ctx1');
   expect(result.name).toBe('alice');
   expect(result.kind).toBe('User');
   expect(result.roles).toHaveLength(1);

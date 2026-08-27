@@ -352,7 +352,6 @@ describe('getUserRoles', () => {
     manager.setRoleBindings({
       roleBindings: [
         {
-          contextName: 'ctx1',
           namespace: 'default',
           name: 'rb1',
           roleRef: { apiGroup: 'rbac.authorization.k8s.io', kind: 'Role', name: 'pod-reader' },
@@ -360,7 +359,7 @@ describe('getUserRoles', () => {
         },
       ],
     });
-    const roles = manager.getUserRoles('ctx1', 'alice');
+    const roles = manager.getUserRoles('alice');
     expect(roles).toHaveLength(1);
     expect(roles[0]).toEqual({
       bindingName: 'rb1',
@@ -376,14 +375,13 @@ describe('getUserRoles', () => {
     manager.setClusterRoleBindings({
       clusterRoleBindings: [
         {
-          contextName: 'ctx1',
           name: 'crb1',
           roleRef: { apiGroup: 'rbac.authorization.k8s.io', kind: 'ClusterRole', name: 'cluster-admin' },
           subjects: [{ kind: 'User', name: 'alice' }],
         },
       ],
     });
-    const roles = manager.getUserRoles('ctx1', 'alice');
+    const roles = manager.getUserRoles('alice');
     expect(roles).toHaveLength(1);
     expect(roles[0]).toEqual({
       bindingName: 'crb1',
@@ -398,7 +396,6 @@ describe('getUserRoles', () => {
     manager.setRoleBindings({
       roleBindings: [
         {
-          contextName: 'ctx1',
           namespace: 'default',
           name: 'rb1',
           roleRef: { apiGroup: 'rbac.authorization.k8s.io', kind: 'Role', name: 'pod-reader' },
@@ -406,36 +403,34 @@ describe('getUserRoles', () => {
         },
       ],
     });
-    const roles = manager.getUserRoles('ctx1', 'alice');
+    const roles = manager.getUserRoles('alice');
     expect(roles).toHaveLength(0);
   });
 
-  test('ignores bindings left over from a previously watched context', () => {
+  test('returns every role binding the user is a subject of', () => {
     manager.setRoleBindings({
       roleBindings: [
         {
-          contextName: 'ctx1',
           namespace: 'default',
           name: 'rb1',
           roleRef: { apiGroup: 'rbac.authorization.k8s.io', kind: 'Role', name: 'pod-reader' },
           subjects: [{ kind: 'User', name: 'alice' }],
         },
         {
-          contextName: 'ctx2',
-          namespace: 'default',
+          namespace: 'other',
           name: 'rb2',
           roleRef: { apiGroup: 'rbac.authorization.k8s.io', kind: 'Role', name: 'admin' },
           subjects: [{ kind: 'User', name: 'alice' }],
         },
       ],
     });
-    const roles = manager.getUserRoles('ctx1', 'alice');
-    expect(roles).toHaveLength(1);
-    expect(roles[0]?.roleName).toBe('pod-reader');
+    const roles = manager.getUserRoles('alice');
+    expect(roles).toHaveLength(2);
+    expect(roles.map(r => r.roleName)).toEqual(['pod-reader', 'admin']);
   });
 
   test('returns empty array when no bindings match', () => {
-    const roles = manager.getUserRoles('ctx1', 'alice');
+    const roles = manager.getUserRoles('alice');
     expect(roles).toHaveLength(0);
   });
 
@@ -443,7 +438,6 @@ describe('getUserRoles', () => {
     manager.setRoles({
       roles: [
         {
-          contextName: 'ctx1',
           namespace: 'default',
           name: 'pod-reader',
           rules: [{ apiGroups: [''], resources: ['pods'], verbs: ['get', 'list'] }],
@@ -453,7 +447,6 @@ describe('getUserRoles', () => {
     manager.setRoleBindings({
       roleBindings: [
         {
-          contextName: 'ctx1',
           namespace: 'default',
           name: 'rb1',
           roleRef: { apiGroup: 'rbac.authorization.k8s.io', kind: 'Role', name: 'pod-reader' },
@@ -461,7 +454,7 @@ describe('getUserRoles', () => {
         },
       ],
     });
-    const roles = manager.getUserRoles('ctx1', 'alice');
+    const roles = manager.getUserRoles('alice');
     expect(roles[0]?.rules).toEqual([{ apiGroups: [''], resources: ['pods'], verbs: ['get', 'list'] }]);
   });
 
@@ -469,7 +462,6 @@ describe('getUserRoles', () => {
     manager.setClusterRoles({
       clusterRoles: [
         {
-          contextName: 'ctx1',
           name: 'cluster-admin',
           rules: [{ apiGroups: ['*'], resources: ['*'], verbs: ['*'] }],
         },
@@ -478,14 +470,13 @@ describe('getUserRoles', () => {
     manager.setClusterRoleBindings({
       clusterRoleBindings: [
         {
-          contextName: 'ctx1',
           name: 'crb1',
           roleRef: { apiGroup: 'rbac.authorization.k8s.io', kind: 'ClusterRole', name: 'cluster-admin' },
           subjects: [{ kind: 'User', name: 'alice' }],
         },
       ],
     });
-    const roles = manager.getUserRoles('ctx1', 'alice');
+    const roles = manager.getUserRoles('alice');
     expect(roles[0]?.rules).toEqual([{ apiGroups: ['*'], resources: ['*'], verbs: ['*'] }]);
   });
 
@@ -493,7 +484,6 @@ describe('getUserRoles', () => {
     manager.setRoleBindings({
       roleBindings: [
         {
-          contextName: 'ctx1',
           namespace: 'default',
           name: 'rb1',
           roleRef: { apiGroup: 'rbac.authorization.k8s.io', kind: 'Role', name: 'pod-reader' },
@@ -504,14 +494,13 @@ describe('getUserRoles', () => {
     manager.setClusterRoleBindings({
       clusterRoleBindings: [
         {
-          contextName: 'ctx1',
           name: 'crb1',
           roleRef: { apiGroup: 'rbac.authorization.k8s.io', kind: 'ClusterRole', name: 'cluster-admin' },
           subjects: [{ kind: 'User', name: 'alice' }],
         },
       ],
     });
-    const roles = manager.getUserRoles('ctx1', 'alice');
+    const roles = manager.getUserRoles('alice');
     expect(roles).toHaveLength(2);
   });
 });
@@ -538,7 +527,7 @@ describe('RBAC data setters and getters', () => {
     const callback = vi.fn();
     manager.onRolesChange(callback);
     const newRoles: RolesData = {
-      roles: [{ contextName: 'ctx1', namespace: 'default', name: 'my-role', rules: [] }],
+      roles: [{ namespace: 'default', name: 'my-role', rules: [] }],
     };
     manager.setRoles(newRoles);
     expect(manager.getRoles()).toEqual(newRoles);
@@ -555,7 +544,6 @@ describe('RBAC data setters and getters', () => {
     const newRoleBindings: RoleBindingsData = {
       roleBindings: [
         {
-          contextName: 'ctx1',
           namespace: 'default',
           name: 'my-binding',
           roleRef: { apiGroup: 'rbac.authorization.k8s.io', kind: 'Role', name: 'my-role' },
@@ -576,7 +564,7 @@ describe('RBAC data setters and getters', () => {
     const callback = vi.fn();
     manager.onClusterRolesChange(callback);
     const newClusterRoles: ClusterRolesData = {
-      clusterRoles: [{ contextName: 'ctx1', name: 'my-cluster-role', rules: [] }],
+      clusterRoles: [{ name: 'my-cluster-role', rules: [] }],
     };
     manager.setClusterRoles(newClusterRoles);
     expect(manager.getClusterRoles()).toEqual(newClusterRoles);
@@ -593,7 +581,6 @@ describe('RBAC data setters and getters', () => {
     const newClusterRoleBindings: ClusterRoleBindingsData = {
       clusterRoleBindings: [
         {
-          contextName: 'ctx1',
           name: 'my-cluster-binding',
           roleRef: { apiGroup: 'rbac.authorization.k8s.io', kind: 'ClusterRole', name: 'my-cluster-role' },
           subjects: [],
@@ -613,7 +600,7 @@ describe('RBAC data setters and getters', () => {
     const callback = vi.fn();
     manager.onUsersChange(callback);
     const newUsers: UsersData = {
-      users: [{ contextName: 'ctx1', kind: 'User', name: 'alice' }],
+      users: [{ kind: 'User', name: 'alice' }],
     };
     manager.setUsers(newUsers);
     expect(manager.getUsers()).toEqual(newUsers);

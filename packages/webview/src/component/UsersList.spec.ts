@@ -52,8 +52,8 @@ describe('UsersList', () => {
   test('passes user data to Table component', () => {
     usersStateMock.setData({
       users: [
-        { contextName: 'ctx1', kind: 'User', name: 'alice' },
-        { contextName: 'ctx1', kind: 'Group', name: 'developers' },
+        { kind: 'User', name: 'alice' },
+        { kind: 'Group', name: 'developers' },
       ],
     });
     render(UsersList);
@@ -66,7 +66,7 @@ describe('UsersList', () => {
   });
 
   test('table has Name, Type and Actions columns', () => {
-    usersStateMock.setData({ users: [{ contextName: 'ctx1', kind: 'User', name: 'alice' }] });
+    usersStateMock.setData({ users: [{ kind: 'User', name: 'alice' }] });
     render(UsersList);
 
     expect(uiSvelte.Table).toHaveBeenCalled();
@@ -76,7 +76,7 @@ describe('UsersList', () => {
   });
 
   test('table kind is set to user', () => {
-    usersStateMock.setData({ users: [{ contextName: 'ctx1', kind: 'User', name: 'alice' }] });
+    usersStateMock.setData({ users: [{ kind: 'User', name: 'alice' }] });
     render(UsersList);
 
     expect(uiSvelte.Table).toHaveBeenCalled();

@@ -62,10 +62,9 @@ function toSubjects(item: KubernetesObject): SubjectInfo[] {
   }));
 }
 
-export function toRoleInfo(item: KubernetesObject, contextName: string): RoleInfo {
+export function toRoleInfo(item: KubernetesObject): RoleInfo {
   const metadata = (item.metadata ?? {}) as Record<string, unknown>;
   return {
-    contextName,
     namespace: (metadata['namespace'] as string) ?? '',
     name: (metadata['name'] as string) ?? '',
     creationTimestamp: metadata['creationTimestamp'] as string | undefined,
@@ -73,7 +72,7 @@ export function toRoleInfo(item: KubernetesObject, contextName: string): RoleInf
   };
 }
 
-export function toClusterRoleInfo(item: KubernetesObject, contextName: string): ClusterRoleInfo {
+export function toClusterRoleInfo(item: KubernetesObject): ClusterRoleInfo {
   const metadata = (item.metadata ?? {}) as Record<string, unknown>;
   const aggregationRule = item['aggregationRule'] as Record<string, unknown> | undefined;
   let aggregationLabels: Record<string, string> | undefined;
@@ -90,7 +89,6 @@ export function toClusterRoleInfo(item: KubernetesObject, contextName: string): 
     }
   }
   return {
-    contextName,
     name: (metadata['name'] as string) ?? '',
     creationTimestamp: metadata['creationTimestamp'] as string | undefined,
     rules: toRules(item),
@@ -98,10 +96,9 @@ export function toClusterRoleInfo(item: KubernetesObject, contextName: string): 
   };
 }
 
-export function toRoleBindingInfo(item: KubernetesObject, contextName: string): RoleBindingInfo {
+export function toRoleBindingInfo(item: KubernetesObject): RoleBindingInfo {
   const metadata = (item.metadata ?? {}) as Record<string, unknown>;
   return {
-    contextName,
     namespace: (metadata['namespace'] as string) ?? '',
     name: (metadata['name'] as string) ?? '',
     creationTimestamp: metadata['creationTimestamp'] as string | undefined,
@@ -110,10 +107,9 @@ export function toRoleBindingInfo(item: KubernetesObject, contextName: string): 
   };
 }
 
-export function toClusterRoleBindingInfo(item: KubernetesObject, contextName: string): ClusterRoleBindingInfo {
+export function toClusterRoleBindingInfo(item: KubernetesObject): ClusterRoleBindingInfo {
   const metadata = (item.metadata ?? {}) as Record<string, unknown>;
   return {
-    contextName,
     name: (metadata['name'] as string) ?? '',
     creationTimestamp: metadata['creationTimestamp'] as string | undefined,
     roleRef: toRoleRef(item),
@@ -128,14 +124,13 @@ export function extractUniqueUsers(
   const seen = new Set<string>();
   const users: UserInfo[] = [];
 
-  const addSubjects = (contextName: string, subjects: SubjectInfo[]): void => {
+  const addSubjects = (subjects: SubjectInfo[]): void => {
     for (const s of subjects) {
       if (s.kind !== 'User') continue;
-      const key = [contextName, s.kind, s.name, s.apiGroup ?? ''].join('\0');
+      const key = [s.kind, s.name, s.apiGroup ?? ''].join('\0');
       if (!seen.has(key)) {
         seen.add(key);
         users.push({
-          contextName,
           kind: s.kind,
           name: s.name,
           apiGroup: s.apiGroup,
@@ -145,10 +140,10 @@ export function extractUniqueUsers(
   };
 
   for (const rb of roleBindings.roleBindings) {
-    addSubjects(rb.contextName, rb.subjects);
+    addSubjects(rb.subjects);
   }
   for (const crb of clusterRoleBindings.clusterRoleBindings) {
-    addSubjects(crb.contextName, crb.subjects);
+    addSubjects(crb.subjects);
   }
 
   return users;

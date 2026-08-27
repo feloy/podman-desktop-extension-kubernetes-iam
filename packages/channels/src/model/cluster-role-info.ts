@@ -19,7 +19,6 @@
 import type { PolicyRuleInfo } from '/@/model/role-info';
 
 export interface ClusterRoleInfo {
-  contextName: string;
   name: string;
   creationTimestamp?: string;
   rules: PolicyRuleInfo[];

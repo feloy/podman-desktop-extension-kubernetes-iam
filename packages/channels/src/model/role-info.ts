@@ -25,7 +25,6 @@ export interface PolicyRuleInfo {
 }
 
 export interface RoleInfo {
-  contextName: string;
   namespace: string;
   name: string;
   creationTimestamp?: string;
