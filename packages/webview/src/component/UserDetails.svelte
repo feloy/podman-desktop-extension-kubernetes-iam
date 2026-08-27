@@ -22,11 +22,10 @@ interface RoleRowUI {
 }
 
 interface Props {
-  contextName: string;
   name: string;
 }
 
-const { contextName, name }: Props = $props();
+const { name }: Props = $props();
 const remote = getContext<Remote>(Remote);
 
 let details: UserDetailsData | undefined = $state(undefined);
@@ -36,10 +35,7 @@ let error: string | undefined = $state(undefined);
 onMount(async () => {
   try {
     const iamApi = remote.getProxy<IamApi>(API_IAM);
-    details = await iamApi.getUserDetails({
-      contextName,
-      userName: name,
-    });
+    details = await iamApi.getUserDetails({ userName: name });
   } catch (e: unknown) {
     error = e instanceof Error ? e.message : String(e);
   } finally {

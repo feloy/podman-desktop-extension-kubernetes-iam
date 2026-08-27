@@ -61,8 +61,8 @@ describe('UsersList', () => {
     expect(uiSvelte.Table).toHaveBeenCalled();
     const props = vi.mocked(uiSvelte.Table as unknown as SvelteComponent).mock.calls[0][1];
     expect(props.data).toHaveLength(2);
-    expect(props.data[0]).toMatchObject({ name: 'alice', kind: 'User', contextName: 'ctx1' });
-    expect(props.data[1]).toMatchObject({ name: 'developers', kind: 'Group', contextName: 'ctx1' });
+    expect(props.data[0]).toMatchObject({ name: 'alice', kind: 'User' });
+    expect(props.data[1]).toMatchObject({ name: 'developers', kind: 'Group' });
   });
 
   test('table has Name, Type and Actions columns', () => {

@@ -42,6 +42,5 @@ export interface UserDetailsData {
 }
 
 export interface GetUserDetailsRequest {
-  contextName: string;
   userName: string;
 }

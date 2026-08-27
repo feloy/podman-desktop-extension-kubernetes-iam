@@ -41,7 +41,6 @@ const users: UserUI[] = $derived(
       return user.name.toLowerCase().includes(term) || user.kind.toLowerCase().includes(term);
     })
     .map(user => ({
-      contextName: user.contextName,
       name: user.name,
       kind: user.kind,
     })),

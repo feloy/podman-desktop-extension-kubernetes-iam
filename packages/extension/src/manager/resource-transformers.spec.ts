@@ -211,7 +211,7 @@ describe('extractUniqueUsers', () => {
     expect(users[0].name).toBe('bob');
   });
 
-  test('treats same user in different contexts as separate entries', () => {
+  test('reports a user bound by several role bindings only once', () => {
     const roleBindings = {
       roleBindings: [
         {
@@ -222,17 +222,16 @@ describe('extractUniqueUsers', () => {
           subjects: [{ kind: 'User', name: 'alice' }],
         },
         {
-          contextName: 'ctx2',
-          namespace: 'default',
+          contextName: 'ctx1',
+          namespace: 'other',
           name: 'rb2',
-          roleRef: { apiGroup: '', kind: 'Role', name: 'role1' },
+          roleRef: { apiGroup: '', kind: 'Role', name: 'role2' },
           subjects: [{ kind: 'User', name: 'alice' }],
         },
       ],
     };
     const users = extractUniqueUsers(roleBindings, { clusterRoleBindings: [] });
-    expect(users).toHaveLength(2);
-    expect(users[0].contextName).toBe('ctx1');
-    expect(users[1].contextName).toBe('ctx2');
+    expect(users).toHaveLength(1);
+    expect(users[0].name).toBe('alice');
   });
 });

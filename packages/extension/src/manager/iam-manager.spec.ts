@@ -41,23 +41,22 @@ beforeEach(async () => {
 });
 
 test('createRole logs telemetry', async () => {
-  await manager.createRole({ contextName: 'ctx1', namespace: 'default', name: 'role1', rules: [] });
+  await manager.createRole({ namespace: 'default', name: 'role1', rules: [] });
   expect(telemetryLoggerMock.logUsage).toHaveBeenCalledWith('createRole');
 });
 
 test('updateRole logs telemetry', async () => {
-  await manager.updateRole({ contextName: 'ctx1', namespace: 'default', name: 'role1', rules: [] });
+  await manager.updateRole({ namespace: 'default', name: 'role1', rules: [] });
   expect(telemetryLoggerMock.logUsage).toHaveBeenCalledWith('updateRole');
 });
 
 test('deleteRole logs telemetry', async () => {
-  await manager.deleteRole('ctx1', 'default', 'role1');
+  await manager.deleteRole('default', 'role1');
   expect(telemetryLoggerMock.logUsage).toHaveBeenCalledWith('deleteRole');
 });
 
 test('createRoleBinding logs telemetry', async () => {
   await manager.createRoleBinding({
-    contextName: 'ctx1',
     namespace: 'default',
     name: 'binding1',
     roleRef: { apiGroup: 'rbac.authorization.k8s.io', kind: 'Role', name: 'role1' },
@@ -68,7 +67,6 @@ test('createRoleBinding logs telemetry', async () => {
 
 test('updateRoleBinding logs telemetry', async () => {
   await manager.updateRoleBinding({
-    contextName: 'ctx1',
     namespace: 'default',
     name: 'binding1',
     roleRef: { apiGroup: 'rbac.authorization.k8s.io', kind: 'Role', name: 'role1' },
@@ -78,28 +76,27 @@ test('updateRoleBinding logs telemetry', async () => {
 });
 
 test('deleteRoleBinding logs telemetry', async () => {
-  await manager.deleteRoleBinding('ctx1', 'default', 'binding1');
+  await manager.deleteRoleBinding('default', 'binding1');
   expect(telemetryLoggerMock.logUsage).toHaveBeenCalledWith('deleteRoleBinding');
 });
 
 test('createClusterRole logs telemetry', async () => {
-  await manager.createClusterRole({ contextName: 'ctx1', name: 'cluster-role1', rules: [] });
+  await manager.createClusterRole({ name: 'cluster-role1', rules: [] });
   expect(telemetryLoggerMock.logUsage).toHaveBeenCalledWith('createClusterRole');
 });
 
 test('updateClusterRole logs telemetry', async () => {
-  await manager.updateClusterRole({ contextName: 'ctx1', name: 'cluster-role1', rules: [] });
+  await manager.updateClusterRole({ name: 'cluster-role1', rules: [] });
   expect(telemetryLoggerMock.logUsage).toHaveBeenCalledWith('updateClusterRole');
 });
 
 test('deleteClusterRole logs telemetry', async () => {
-  await manager.deleteClusterRole('ctx1', 'cluster-role1');
+  await manager.deleteClusterRole('cluster-role1');
   expect(telemetryLoggerMock.logUsage).toHaveBeenCalledWith('deleteClusterRole');
 });
 
 test('createClusterRoleBinding logs telemetry', async () => {
   await manager.createClusterRoleBinding({
-    contextName: 'ctx1',
     name: 'cluster-binding1',
     roleRef: { apiGroup: 'rbac.authorization.k8s.io', kind: 'ClusterRole', name: 'cluster-role1' },
     subjects: [],
@@ -109,7 +106,6 @@ test('createClusterRoleBinding logs telemetry', async () => {
 
 test('updateClusterRoleBinding logs telemetry', async () => {
   await manager.updateClusterRoleBinding({
-    contextName: 'ctx1',
     name: 'cluster-binding1',
     roleRef: { apiGroup: 'rbac.authorization.k8s.io', kind: 'ClusterRole', name: 'cluster-role1' },
     subjects: [],
@@ -118,12 +114,12 @@ test('updateClusterRoleBinding logs telemetry', async () => {
 });
 
 test('deleteClusterRoleBinding logs telemetry', async () => {
-  await manager.deleteClusterRoleBinding('ctx1', 'cluster-binding1');
+  await manager.deleteClusterRoleBinding('cluster-binding1');
   expect(telemetryLoggerMock.logUsage).toHaveBeenCalledWith('deleteClusterRoleBinding');
 });
 
 test('refreshRbacData logs telemetry', async () => {
-  await manager.refreshRbacData('ctx1');
+  await manager.refreshRbacData();
   expect(telemetryLoggerMock.logUsage).toHaveBeenCalledWith('refreshRbacData');
 });
 
@@ -152,7 +148,9 @@ test('getUserDetails logs telemetry and returns user details with roles', async 
     ],
   });
 
-  const result = await manager.getUserDetails({ contextName: 'ctx1', userName: 'alice' });
+  statesManager.setUsers({ users: [{ contextName: 'ctx1', kind: 'User', name: 'alice' }] });
+
+  const result = await manager.getUserDetails({ userName: 'alice' });
 
   expect(telemetryLoggerMock.logUsage).toHaveBeenCalledWith('getUserDetails');
   expect(result.contextName).toBe('ctx1');

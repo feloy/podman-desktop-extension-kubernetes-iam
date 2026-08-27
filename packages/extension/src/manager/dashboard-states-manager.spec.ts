@@ -410,7 +410,7 @@ describe('getUserRoles', () => {
     expect(roles).toHaveLength(0);
   });
 
-  test('filters by context name', () => {
+  test('ignores bindings left over from a previously watched context', () => {
     manager.setRoleBindings({
       roleBindings: [
         {
