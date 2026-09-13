@@ -42,6 +42,8 @@ const mockApi: KubernetesDashboardExtensionApi = {
   patchSubresource: vi.fn(),
   deleteResource: vi.fn(),
   getSubscriber: vi.fn(),
+  getApiVersions: vi.fn(),
+  getApiResources: vi.fn(),
   contexts: { connect: vi.fn() } as unknown as typeof contexts,
 };
 

@@ -32,7 +32,7 @@ overrides:
   js-yaml@>=5.0.0 <5.3.0: '>=5.3.0'
 
 patchedDependencies:
-  '@podman-desktop/kubernetes-dashboard-extension-api': 8a4a30f09131c46b8b5c559203949f5a09c5227a8985b7929a76a6016f286516
+  '@podman-desktop/kubernetes-dashboard-extension-api': e9aa70c3fbf7afc1642d84bf17d90879d201f1238c0b499f411e8fb3e0ed2c07
 
 importers:
 
@@ -174,7 +174,7 @@ importers:
         version: 1.29.1
       '@podman-desktop/kubernetes-dashboard-extension-api':
         specifier: 0.5.0
-        version: 0.5.0(patch_hash=8a4a30f09131c46b8b5c559203949f5a09c5227a8985b7929a76a6016f286516)
+        version: 0.5.0(patch_hash=e9aa70c3fbf7afc1642d84bf17d90879d201f1238c0b499f411e8fb3e0ed2c07)
       '@types/node':
         specifier: ^24
         version: 24.13.5
@@ -3894,7 +3894,7 @@ snapshots:
 
   '@podman-desktop/api@1.29.1': {}
 
-  '@podman-desktop/kubernetes-dashboard-extension-api@0.5.0(patch_hash=8a4a30f09131c46b8b5c559203949f5a09c5227a8985b7929a76a6016f286516)': {}
+  '@podman-desktop/kubernetes-dashboard-extension-api@0.5.0(patch_hash=e9aa70c3fbf7afc1642d84bf17d90879d201f1238c0b499f411e8fb3e0ed2c07)': {}
 
   '@podman-desktop/tests-playwright@1.29.1': {}
 
