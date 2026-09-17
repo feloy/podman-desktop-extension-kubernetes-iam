@@ -54,9 +54,9 @@ async function onAdd(): Promise<void> {
     // A cluster role bound through a namespaced binding carries the namespace of that
     // binding, so the kind is what tells the two apart.
     if (role.kind === 'ClusterRole') {
-      await iamApi.addRuleToClusterRole({ name: role.name, rule });
+      await iamApi.addRulesToClusterRole({ name: role.name, rules: [rule] });
     } else {
-      await iamApi.addRuleToRole({ namespace: role.namespace ?? '', name: role.name, rule });
+      await iamApi.addRulesToRole({ namespace: role.namespace ?? '', name: role.name, rules: [rule] });
     }
     onclose();
   } catch (e: unknown) {

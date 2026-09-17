@@ -49,8 +49,8 @@ beforeEach(() => {
     getUserDetails: vi.fn().mockResolvedValue({ name: 'alice', kind: 'User', roles: [] }),
     createRoleForUser: vi.fn().mockResolvedValue(undefined),
     createClusterRoleForUser: vi.fn().mockResolvedValue(undefined),
-    addRuleToRole: vi.fn().mockResolvedValue(undefined),
-    addRuleToClusterRole: vi.fn().mockResolvedValue(undefined),
+    addRulesToRole: vi.fn().mockResolvedValue(undefined),
+    addRulesToClusterRole: vi.fn().mockResolvedValue(undefined),
     revokeRoleFromUser: vi.fn().mockResolvedValue(undefined),
   } as unknown as IamApi);
   statesMocks.reset();
@@ -286,10 +286,10 @@ describe('UserDetails', () => {
     await fireEvent.input(screen.getByRole('textbox', { name: 'Verbs' }), { target: { value: 'get, list' } });
     await fireEvent.click(screen.getByRole('button', { name: 'Add' }));
 
-    expect(remoteMocks.get(API_IAM).addRuleToRole).toHaveBeenCalledWith({
+    expect(remoteMocks.get(API_IAM).addRulesToRole).toHaveBeenCalledWith({
       namespace: 'default',
       name: 'pod-reader',
-      rule: { apiGroups: ['apps'], resources: ['deployments'], verbs: ['get', 'list'], resourceNames: [] },
+      rules: [{ apiGroups: ['apps'], resources: ['deployments'], verbs: ['get', 'list'], resourceNames: [] }],
     });
   });
 
@@ -300,9 +300,9 @@ describe('UserDetails', () => {
     await fireEvent.input(screen.getByRole('textbox', { name: 'Verbs' }), { target: { value: 'get' } });
     await fireEvent.click(screen.getByRole('button', { name: 'Add' }));
 
-    expect(remoteMocks.get(API_IAM).addRuleToClusterRole).toHaveBeenCalledWith({
+    expect(remoteMocks.get(API_IAM).addRulesToClusterRole).toHaveBeenCalledWith({
       name: 'node-reader',
-      rule: { apiGroups: [''], resources: ['nodes'], verbs: ['get'], resourceNames: [] },
+      rules: [{ apiGroups: [''], resources: ['nodes'], verbs: ['get'], resourceNames: [] }],
     });
   });
 
@@ -313,11 +313,11 @@ describe('UserDetails', () => {
     await fireEvent.input(screen.getByRole('textbox', { name: 'Verbs' }), { target: { value: 'get' } });
     await fireEvent.click(screen.getByRole('button', { name: 'Add' }));
 
-    expect(remoteMocks.get(API_IAM).addRuleToClusterRole).toHaveBeenCalledWith({
+    expect(remoteMocks.get(API_IAM).addRulesToClusterRole).toHaveBeenCalledWith({
       name: 'view',
-      rule: { apiGroups: [''], resources: ['pods'], verbs: ['get'], resourceNames: [] },
+      rules: [{ apiGroups: [''], resources: ['pods'], verbs: ['get'], resourceNames: [] }],
     });
-    expect(remoteMocks.get(API_IAM).addRuleToRole).not.toHaveBeenCalled();
+    expect(remoteMocks.get(API_IAM).addRulesToRole).not.toHaveBeenCalled();
   });
 
   test('sends the core API group under the name Kubernetes gives it', async () => {
@@ -328,9 +328,9 @@ describe('UserDetails', () => {
     await fireEvent.input(screen.getByRole('textbox', { name: 'Verbs' }), { target: { value: 'get' } });
     await fireEvent.click(screen.getByRole('button', { name: 'Add' }));
 
-    expect(remoteMocks.get(API_IAM).addRuleToClusterRole).toHaveBeenCalledWith({
+    expect(remoteMocks.get(API_IAM).addRulesToClusterRole).toHaveBeenCalledWith({
       name: 'node-reader',
-      rule: { apiGroups: ['', 'apps'], resources: ['nodes'], verbs: ['get'], resourceNames: [] },
+      rules: [{ apiGroups: ['', 'apps'], resources: ['nodes'], verbs: ['get'], resourceNames: [] }],
     });
   });
 
@@ -340,11 +340,11 @@ describe('UserDetails', () => {
     await fireEvent.input(screen.getByRole('textbox', { name: 'Resources' }), { target: { value: 'pods' } });
     await fireEvent.click(screen.getByRole('button', { name: 'Add' }));
 
-    expect(remoteMocks.get(API_IAM).addRuleToRole).not.toHaveBeenCalled();
+    expect(remoteMocks.get(API_IAM).addRulesToRole).not.toHaveBeenCalled();
   });
 
   test('displays the error when the rule is refused', async () => {
-    vi.mocked(remoteMocks.get(API_IAM).addRuleToRole).mockRejectedValue(new Error('No role named pod-reader'));
+    vi.mocked(remoteMocks.get(API_IAM).addRulesToRole).mockRejectedValue(new Error('No role named pod-reader'));
     await openRuleDialog({ kind: 'Role', name: 'pod-reader', namespace: 'default' });
 
     await fireEvent.input(screen.getByRole('textbox', { name: 'Resources' }), { target: { value: 'pods' } });

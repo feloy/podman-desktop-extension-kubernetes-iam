@@ -22,3 +22,4 @@ export * from './cluster-role-info';
 export * from './cluster-role-binding-info';
 export * from './user-info';
 export * from './user-details-info';
+export * from './api-resource-info';
