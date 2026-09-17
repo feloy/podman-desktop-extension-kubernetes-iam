@@ -1,62 +1,145 @@
 <script lang="ts">
-import { Button, ErrorMessage, Input, Modal } from '@podman-desktop/ui-svelte';
-import { getContext } from 'svelte';
+import { Button, ErrorMessage, Modal, Spinner } from '@podman-desktop/ui-svelte';
+import { getContext, onDestroy, untrack } from 'svelte';
 import { Remote } from '/@/remote/remote';
 import { API_IAM } from '@kubernetes-iam/channels';
-import type { IamApi, PolicyRuleInfo } from '@kubernetes-iam/channels';
+import type { ApiResourcesData, ApiResourcesStatus, IamApi } from '@kubernetes-iam/channels';
+import { States } from '/@/state/states';
 import type { RoleRef } from './RoleRowUI';
+import ResourceNamesInput from './rule/ResourceNamesInput.svelte';
+import ResourceSelector from './rule/ResourceSelector.svelte';
+import RulesPreview from './rule/RulesPreview.svelte';
+import SelectedResources from './rule/SelectedResources.svelte';
+import VerbSelector from './rule/VerbSelector.svelte';
+import { toPolicyRules, toSelectableResources, verbOptions } from './rule/rule-builder';
 
 interface Props {
   role: RoleRef;
   onclose: () => void;
 }
 
+const DISCOVERY_DEADLINE_MS = 15_000;
+
 const { role, onclose }: Props = $props();
 const remote = getContext<Remote>(Remote);
+const states = getContext<States>(States);
 
-let apiGroups = $state('');
-let resources = $state('');
-let verbs = $state('');
-let resourceNames = $state('');
+let selectedKeys = $state<string[]>([]);
+let selectedVerbs = $state<string[]>([]);
+let resourceNames = $state<string[]>([]);
 let adding = $state(false);
 let error: string | undefined = $state(undefined);
+let timedOut = $state(false);
+let deadline: ReturnType<typeof setTimeout> | undefined;
 
-/** Splits a comma or space separated list, dropping the blanks left by the separators. */
-function toList(value: string): string[] {
-  return value
-    .split(/[\s,]+/)
-    .map(entry => entry.trim())
-    .filter(entry => entry.length > 0);
+const data = $derived(states.stateApiResourcesData.data);
+const remoteStatus = $derived(data?.status ?? 'unknown');
+const status = $derived(
+  timedOut && (remoteStatus === 'unknown' || remoteStatus === 'loading') ? 'error' : remoteStatus,
+);
+
+const catalog = $derived(toSelectableResources(data ?? emptyDiscovery()));
+/** A namespaced Role cannot grant cluster-scoped resources. */
+const available = $derived(role.kind === 'Role' ? catalog.filter(resource => resource.namespaced) : catalog);
+const selectedResources = $derived(available.filter(resource => selectedKeys.includes(resource.key)));
+const availableVerbs = $derived(verbOptions(selectedResources));
+const rules = $derived(toPolicyRules(selectedResources, selectedVerbs, resourceNames));
+const canAdd = $derived(rules.length > 0 && !adding && status === 'loaded');
+const discoveryError = $derived(errorMessage(status, timedOut, data));
+
+$effect(() => {
+  const current = remoteStatus;
+  if (current === 'loaded' || current === 'error') {
+    untrack(() => {
+      timedOut = false;
+      clearDeadline();
+    });
+    return;
+  }
+  if (current === 'unknown') {
+    untrack(() => {
+      requestDiscovery();
+    });
+    return;
+  }
+  untrack(() => {
+    armDeadline();
+  });
+});
+
+onDestroy(() => {
+  clearDeadline();
+});
+
+function emptyDiscovery(): ApiResourcesData {
+  return { status: 'unknown', resources: [] };
 }
 
-const parsedResources = $derived(toList(resources));
-const parsedVerbs = $derived(toList(verbs));
-const canAdd = $derived(parsedResources.length > 0 && parsedVerbs.length > 0 && !adding);
+function errorMessage(
+  current: ApiResourcesStatus,
+  deadlineReached: boolean,
+  discovery: ApiResourcesData | undefined,
+): string | undefined {
+  if (current !== 'error') {
+    return undefined;
+  }
+  if (deadlineReached && !discovery?.error) {
+    return 'Timed out waiting for API resources.';
+  }
+  return discovery?.error ?? 'API resources could not be loaded.';
+}
 
-/** The core API group is named by the empty string, which the table displays as `core`. */
-function toApiGroups(value: string): string[] {
-  const groups = toList(value).map(group => (group === 'core' ? '' : group));
-  return groups.length > 0 ? groups : [''];
+function clearDeadline(): void {
+  if (deadline !== undefined) {
+    clearTimeout(deadline);
+    deadline = undefined;
+  }
+}
+
+function armDeadline(): void {
+  clearDeadline();
+  timedOut = false;
+  deadline = setTimeout(() => {
+    timedOut = true;
+  }, DISCOVERY_DEADLINE_MS);
+}
+
+function requestDiscovery(): void {
+  armDeadline();
+  remote.getProxy<IamApi>(API_IAM).refreshApiResources().catch(console.error);
+}
+
+function onRetry(): void {
+  timedOut = false;
+  requestDiscovery();
+}
+
+function toggleResource(key: string): void {
+  selectedKeys = selectedKeys.includes(key) ? selectedKeys.filter(entry => entry !== key) : [...selectedKeys, key];
+}
+
+function toggleVerb(verb: string): void {
+  selectedVerbs = selectedVerbs.includes(verb)
+    ? selectedVerbs.filter(entry => entry !== verb)
+    : [...selectedVerbs, verb];
+}
+
+function replaceVerbs(verbs: string[]): void {
+  selectedVerbs = verbs;
 }
 
 async function onAdd(): Promise<void> {
   if (!canAdd) return;
   adding = true;
   error = undefined;
-  const rule: PolicyRuleInfo = {
-    apiGroups: toApiGroups(apiGroups),
-    resources: parsedResources,
-    verbs: parsedVerbs,
-    resourceNames: toList(resourceNames),
-  };
   try {
     const iamApi = remote.getProxy<IamApi>(API_IAM);
     // A cluster role bound through a namespaced binding carries the namespace of that
     // binding, so the kind is what tells the two apart.
     if (role.kind === 'ClusterRole') {
-      await iamApi.addRulesToClusterRole({ name: role.name, rules: [rule] });
+      await iamApi.addRulesToClusterRole({ name: role.name, rules });
     } else {
-      await iamApi.addRulesToRole({ namespace: role.namespace ?? '', name: role.name, rules: [rule] });
+      await iamApi.addRulesToRole({ namespace: role.namespace ?? '', name: role.name, rules });
     }
     onclose();
   } catch (e: unknown) {
@@ -65,68 +148,45 @@ async function onAdd(): Promise<void> {
     adding = false;
   }
 }
-
-function onKeydown(event: KeyboardEvent): void {
-  if (event.key === 'Enter') {
-    onAdd().catch(console.error);
-  }
-}
 </script>
 
 <Modal name="Add rule" onclose={onclose}>
-  <div class="flex flex-col gap-4 p-6">
+  <div class="flex max-h-[calc(100vh-8rem)] flex-col gap-4 overflow-y-auto p-6">
     <h1 class="text-lg font-semibold text-(--pd-modal-text)">Add rule to {role.name}</h1>
 
-    <p class="text-sm text-(--pd-modal-text)">
-      Values are separated by commas. Use <code>*</code> to cover them all.
-    </p>
-
-    <label class="flex flex-col gap-2 text-sm text-(--pd-modal-text)" for="rule-api-groups">
-      API groups
-      <Input
-        id="rule-api-groups"
-        name="rule-api-groups"
-        bind:value={apiGroups}
-        placeholder="e.g. apps (empty for the core group)"
-        aria-label="API groups"
-        onkeypress={onKeydown} />
-    </label>
-
-    <label class="flex flex-col gap-2 text-sm text-(--pd-modal-text)" for="rule-resources">
-      Resources
-      <Input
-        id="rule-resources"
-        name="rule-resources"
-        bind:value={resources}
-        placeholder="e.g. pods, pods/log"
-        aria-label="Resources"
-        onkeypress={onKeydown} />
-    </label>
-
-    <label class="flex flex-col gap-2 text-sm text-(--pd-modal-text)" for="rule-verbs">
-      Verbs
-      <span class="text-xs text-(--pd-input-field-placeholder-text)">
-        get, list, watch, create, update, patch, delete, deletecollection
-      </span>
-      <Input
-        id="rule-verbs"
-        name="rule-verbs"
-        bind:value={verbs}
-        placeholder="e.g. get, list, watch"
-        aria-label="Verbs"
-        onkeypress={onKeydown} />
-    </label>
-
-    <label class="flex flex-col gap-2 text-sm text-(--pd-modal-text)" for="rule-resource-names">
-      Resource names (optional)
-      <Input
-        id="rule-resource-names"
-        name="rule-resource-names"
-        bind:value={resourceNames}
-        placeholder="e.g. my-pod"
-        aria-label="Resource names"
-        onkeypress={onKeydown} />
-    </label>
+    {#if status === 'unknown' || status === 'loading'}
+      <div class="flex flex-row items-center gap-2 text-sm text-(--pd-modal-text)">
+        <Spinner size="1.5em" label="Loading API resources" />
+        <span>Loading API resources…</span>
+      </div>
+    {:else if status === 'error'}
+      {#if discoveryError}
+        <ErrorMessage error={discoveryError} />
+      {/if}
+      <Button type="secondary" onclick={onRetry}>Retry</Button>
+    {:else}
+      {#if data?.failedGroupVersions && data.failedGroupVersions.length > 0}
+        <p class="text-sm text-(--pd-input-field-placeholder-text)">
+          Some API groups could not be listed: {data.failedGroupVersions.join(', ')}
+        </p>
+      {/if}
+      <ResourceSelector resources={available} selected={selectedKeys} onToggle={toggleResource} />
+      <SelectedResources resources={selectedResources} onRemove={toggleResource} />
+      {#if selectedResources.length > 0}
+        <VerbSelector
+          available={availableVerbs}
+          selected={selectedVerbs}
+          onToggle={toggleVerb}
+          onReplace={replaceVerbs} />
+        <ResourceNamesInput
+          names={resourceNames}
+          verbs={selectedVerbs}
+          onChange={(names): void => {
+            resourceNames = names;
+          }} />
+        <RulesPreview rules={rules} />
+      {/if}
+    {/if}
 
     {#if error}
       <ErrorMessage error={error} />
@@ -134,7 +194,7 @@ function onKeydown(event: KeyboardEvent): void {
 
     <div class="flex justify-end gap-2">
       <Button type="secondary" onclick={onclose}>Cancel</Button>
-      <Button inProgress={adding} disabled={!canAdd} onclick={onAdd}>Add</Button>
+      <Button inProgress={adding} disabled={!canAdd} onclick={onAdd}>Add rules</Button>
     </div>
   </div>
 </Modal>
