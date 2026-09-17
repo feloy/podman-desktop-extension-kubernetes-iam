@@ -25,10 +25,11 @@ import type { RpcExtension } from '@kubernetes-iam/rpc';
 import type { ExtensionContext, TelemetryLogger } from '@podman-desktop/api';
 import type { Container } from 'inversify';
 import { InversifyBinding } from '/@/inject/inversify-binding.js';
-import { ROLES, USERS } from '@kubernetes-iam/channels';
+import { ROLES, USERS, API_RESOURCES } from '@kubernetes-iam/channels';
 import { Dispatcher } from '/@/manager/dispatcher.js';
 import { ChannelSubscriber } from '/@/manager/channel-subscriber.js';
 import { DispatcherObject } from '/@/dispatcher/util/dispatcher-object.js';
+import { ApiResourcesManager } from '/@/manager/api-resources-manager.js';
 
 let container: Container;
 const dashboardStatesManagerMock: DashboardStatesManager = {
@@ -38,6 +39,9 @@ const dashboardStatesManagerMock: DashboardStatesManager = {
   onClusterRoleBindingsChange: vi.fn(),
   onUsersChange: vi.fn(),
 } as unknown as DashboardStatesManager;
+const apiResourcesManagerMock: ApiResourcesManager = {
+  onApiResourcesChange: vi.fn(),
+} as unknown as ApiResourcesManager;
 const rpcExtension: RpcExtension = {
   fire: vi.fn(),
 } as unknown as RpcExtension;
@@ -64,6 +68,7 @@ beforeAll(async () => {
   const inversifyBinding = new InversifyBinding(rpcExtension, extensionContext, telemetryLogger);
   container = await inversifyBinding.initBindings();
   (await container.rebindAsync(DashboardStatesManager)).toConstantValue(dashboardStatesManagerMock);
+  (await container.rebindAsync(ApiResourcesManager)).toConstantValue(apiResourcesManagerMock);
   (await container.rebindAsync(ChannelSubscriber)).toConstantValue(channelSubscriberMock);
   container.bind(DispatcherObject).toConstantValue(channel1DispatcherMock);
   container.bind(DispatcherObject).toConstantValue(channel2DispatcherMock);
@@ -106,6 +111,19 @@ test('Dispatcher should dispatch users when onUsersChange event is fired', async
     expect(dispatcherSpy).toHaveBeenCalledTimes(1);
   });
   expect(dispatcherSpy).toHaveBeenCalledWith(USERS);
+});
+
+test('Dispatcher should dispatch api resources when onApiResourcesChange event is fired', async () => {
+  const dispatcherSpy = vi.spyOn(dispatcher, 'dispatch').mockResolvedValue();
+  dispatcher.init();
+  expect(dispatcherSpy).not.toHaveBeenCalled();
+
+  vi.mocked(apiResourcesManagerMock.onApiResourcesChange).mockImplementation(f => f() as IDisposable);
+  dispatcher.init();
+  await vi.waitFor(() => {
+    expect(dispatcherSpy).toHaveBeenCalledTimes(1);
+  });
+  expect(dispatcherSpy).toHaveBeenCalledWith(API_RESOURCES);
 });
 
 test('dispatch of the matching dispatcher is called when dispatchByChannelName is called', async () => {

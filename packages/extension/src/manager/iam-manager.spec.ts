@@ -20,6 +20,7 @@ import { beforeEach, expect, test, vi } from 'vitest';
 import { IamManager } from './iam-manager';
 import { DashboardStatesManager } from './dashboard-states-manager';
 import { DashboardApiManager } from './dashboard-api-manager';
+import { ApiResourcesManager } from './api-resources-manager';
 import type { ExtensionContext, TelemetryLogger } from '@podman-desktop/api';
 import type { RpcExtension } from '@kubernetes-iam/rpc';
 import type { SubjectInfo } from '@kubernetes-iam/channels';
@@ -199,6 +200,21 @@ test('deleteClusterRoleBinding logs telemetry', async () => {
 test('refreshRbacData logs telemetry', async () => {
   await manager.refreshRbacData();
   expect(telemetryLoggerMock.logUsage).toHaveBeenCalledWith('refreshRbacData');
+});
+
+test('refreshApiResources starts discovery without waiting for it', async () => {
+  const apiResourcesManager = container.get(ApiResourcesManager);
+  let resolveRefresh!: () => void;
+  vi.spyOn(apiResourcesManager, 'refresh').mockReturnValue(
+    new Promise(resolve => {
+      resolveRefresh = resolve;
+    }),
+  );
+
+  await expect(manager.refreshApiResources()).resolves.toBeUndefined();
+  expect(telemetryLoggerMock.logUsage).toHaveBeenCalledWith('refreshApiResources');
+  expect(apiResourcesManager.refresh).toHaveBeenCalledOnce();
+  resolveRefresh();
 });
 
 test('createClusterRoleBinding applies the binding with server-side apply', async () => {

@@ -44,6 +44,7 @@ import type { TelemetryLogger } from '@podman-desktop/api';
 import { window } from '@podman-desktop/api';
 import { DashboardApiManager } from '/@/manager/dashboard-api-manager';
 import { DashboardStatesManager } from '/@/manager/dashboard-states-manager';
+import { ApiResourcesManager } from '/@/manager/api-resources-manager';
 import { KubeconfigGenerator } from '/@/manager/kubeconfig-generator';
 import { isValidUsername, toBindingName } from '/@/manager/user-names';
 import { isValidNamespaceName, isValidResourceName } from '/@/manager/resource-names';
@@ -182,6 +183,9 @@ export class IamManager implements IamApi {
   @inject(DashboardStatesManager)
   private dashboardStatesManager: DashboardStatesManager;
 
+  @inject(ApiResourcesManager)
+  private apiResourcesManager: ApiResourcesManager;
+
   @inject(KubeconfigGenerator)
   private kubeconfigGenerator: KubeconfigGenerator;
 
@@ -252,6 +256,11 @@ export class IamManager implements IamApi {
   async refreshRbacData(): Promise<void> {
     this.telemetryLogger.logUsage('refreshRbacData');
     // TODO: delegate to Dashboard API once RBAC capabilities are available
+  }
+
+  async refreshApiResources(): Promise<void> {
+    this.telemetryLogger.logUsage('refreshApiResources');
+    this.apiResourcesManager.refresh().catch(console.error);
   }
 
   async createUser(request: CreateUserRequest): Promise<void> {
