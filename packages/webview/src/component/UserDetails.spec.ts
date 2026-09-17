@@ -19,6 +19,7 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import type {
+  ApiResourceInfo,
   ApiResourcesData,
   ClusterRoleBindingsData,
   ClusterRolesData,
@@ -53,6 +54,7 @@ beforeEach(() => {
     createClusterRoleForUser: vi.fn().mockResolvedValue(undefined),
     addRulesToRole: vi.fn().mockResolvedValue(undefined),
     addRulesToClusterRole: vi.fn().mockResolvedValue(undefined),
+    refreshApiResources: vi.fn().mockResolvedValue(undefined),
     revokeRoleFromUser: vi.fn().mockResolvedValue(undefined),
   } as unknown as IamApi);
   statesMocks.reset();
@@ -69,6 +71,20 @@ beforeEach(() => {
   vi.spyOn(uiSvelte, 'Table').mockImplementation(vi.fn());
 });
 
+function apiResource(group: string, name: string, extra?: Partial<ApiResourceInfo>): ApiResourceInfo {
+  return {
+    group,
+    resource: name,
+    kind: extra?.kind ?? name,
+    namespaced: extra?.namespaced ?? true,
+    verbs: extra?.verbs ?? ['get', 'list', 'watch', 'create', 'update', 'patch', 'delete', 'deletecollection'],
+  };
+}
+
+const PODS = apiResource('', 'pods', { kind: 'Pod' });
+const DEPLOYMENTS = apiResource('apps', 'deployments', { kind: 'Deployment' });
+const NODES = apiResource('', 'nodes', { kind: 'Node', namespaced: false });
+
 async function renderDetails(): Promise<void> {
   render(UserDetails, { name: 'alice' });
   await waitFor(() => expect(remoteMocks.get(API_IAM).getUserDetails).toHaveBeenCalledWith({ userName: 'alice' }));
@@ -80,6 +96,7 @@ async function renderDetails(): Promise<void> {
  * mounted.
  */
 async function openRuleDialog(role: { kind: string; name: string; namespace?: string }): Promise<void> {
+  apiResourcesStateMock.setData({ status: 'loaded', resources: [PODS, DEPLOYMENTS, NODES] });
   vi.mocked(remoteMocks.get(API_IAM).getUserDetails).mockResolvedValue({
     name: 'alice',
     kind: 'User',
@@ -290,64 +307,67 @@ describe('UserDetails', () => {
   test('adds a rule to the role of the row', async () => {
     await openRuleDialog({ kind: 'Role', name: 'pod-reader', namespace: 'default' });
 
-    await fireEvent.input(screen.getByRole('textbox', { name: 'API groups' }), { target: { value: 'apps' } });
-    await fireEvent.input(screen.getByRole('textbox', { name: 'Resources' }), { target: { value: 'deployments' } });
-    await fireEvent.input(screen.getByRole('textbox', { name: 'Verbs' }), { target: { value: 'get, list' } });
-    await fireEvent.click(screen.getByRole('button', { name: 'Add' }));
+    await fireEvent.click(screen.getByRole('checkbox', { name: 'deployments' }));
+    await fireEvent.click(screen.getByRole('checkbox', { name: 'get' }));
+    await fireEvent.click(screen.getByRole('checkbox', { name: 'list' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Add rules' }));
 
     expect(remoteMocks.get(API_IAM).addRulesToRole).toHaveBeenCalledWith({
       namespace: 'default',
       name: 'pod-reader',
-      rules: [{ apiGroups: ['apps'], resources: ['deployments'], verbs: ['get', 'list'], resourceNames: [] }],
+      rules: [{ apiGroups: ['apps'], resources: ['deployments'], verbs: ['get', 'list'] }],
     });
   });
 
-  test('adds a rule to a cluster role, on the core API group by default', async () => {
+  test('adds a rule to a cluster role', async () => {
     await openRuleDialog({ kind: 'ClusterRole', name: 'node-reader' });
 
-    await fireEvent.input(screen.getByRole('textbox', { name: 'Resources' }), { target: { value: 'nodes' } });
-    await fireEvent.input(screen.getByRole('textbox', { name: 'Verbs' }), { target: { value: 'get' } });
-    await fireEvent.click(screen.getByRole('button', { name: 'Add' }));
+    await fireEvent.click(screen.getByRole('checkbox', { name: 'nodes' }));
+    await fireEvent.click(screen.getByRole('checkbox', { name: 'get' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Add rules' }));
 
     expect(remoteMocks.get(API_IAM).addRulesToClusterRole).toHaveBeenCalledWith({
       name: 'node-reader',
-      rules: [{ apiGroups: [''], resources: ['nodes'], verbs: ['get'], resourceNames: [] }],
+      rules: [{ apiGroups: [''], resources: ['nodes'], verbs: ['get'] }],
     });
   });
 
   test('adds a rule to a cluster role bound through a namespaced binding', async () => {
     await openRuleDialog({ kind: 'ClusterRole', name: 'view', namespace: 'default' });
 
-    await fireEvent.input(screen.getByRole('textbox', { name: 'Resources' }), { target: { value: 'pods' } });
-    await fireEvent.input(screen.getByRole('textbox', { name: 'Verbs' }), { target: { value: 'get' } });
-    await fireEvent.click(screen.getByRole('button', { name: 'Add' }));
+    await fireEvent.click(screen.getByRole('checkbox', { name: 'pods' }));
+    await fireEvent.click(screen.getByRole('checkbox', { name: 'get' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Add rules' }));
 
     expect(remoteMocks.get(API_IAM).addRulesToClusterRole).toHaveBeenCalledWith({
       name: 'view',
-      rules: [{ apiGroups: [''], resources: ['pods'], verbs: ['get'], resourceNames: [] }],
+      rules: [{ apiGroups: [''], resources: ['pods'], verbs: ['get'] }],
     });
     expect(remoteMocks.get(API_IAM).addRulesToRole).not.toHaveBeenCalled();
   });
 
-  test('sends the core API group under the name Kubernetes gives it', async () => {
+  test('emits one rule per API group when two groups are selected', async () => {
     await openRuleDialog({ kind: 'ClusterRole', name: 'node-reader' });
 
-    await fireEvent.input(screen.getByRole('textbox', { name: 'API groups' }), { target: { value: 'core, apps' } });
-    await fireEvent.input(screen.getByRole('textbox', { name: 'Resources' }), { target: { value: 'nodes' } });
-    await fireEvent.input(screen.getByRole('textbox', { name: 'Verbs' }), { target: { value: 'get' } });
-    await fireEvent.click(screen.getByRole('button', { name: 'Add' }));
+    await fireEvent.click(screen.getByRole('checkbox', { name: 'pods' }));
+    await fireEvent.click(screen.getByRole('checkbox', { name: 'deployments' }));
+    await fireEvent.click(screen.getByRole('radio', { name: 'View' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Add rules' }));
 
     expect(remoteMocks.get(API_IAM).addRulesToClusterRole).toHaveBeenCalledWith({
       name: 'node-reader',
-      rules: [{ apiGroups: ['', 'apps'], resources: ['nodes'], verbs: ['get'], resourceNames: [] }],
+      rules: [
+        { apiGroups: [''], resources: ['pods'], verbs: ['get', 'list', 'watch'] },
+        { apiGroups: ['apps'], resources: ['deployments'], verbs: ['get', 'list', 'watch'] },
+      ],
     });
   });
 
   test('refuses a rule without any resource or verb', async () => {
     await openRuleDialog({ kind: 'Role', name: 'pod-reader', namespace: 'default' });
 
-    await fireEvent.input(screen.getByRole('textbox', { name: 'Resources' }), { target: { value: 'pods' } });
-    await fireEvent.click(screen.getByRole('button', { name: 'Add' }));
+    await fireEvent.click(screen.getByRole('checkbox', { name: 'pods' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Add rules' }));
 
     expect(remoteMocks.get(API_IAM).addRulesToRole).not.toHaveBeenCalled();
   });
@@ -356,9 +376,9 @@ describe('UserDetails', () => {
     vi.mocked(remoteMocks.get(API_IAM).addRulesToRole).mockRejectedValue(new Error('No role named pod-reader'));
     await openRuleDialog({ kind: 'Role', name: 'pod-reader', namespace: 'default' });
 
-    await fireEvent.input(screen.getByRole('textbox', { name: 'Resources' }), { target: { value: 'pods' } });
-    await fireEvent.input(screen.getByRole('textbox', { name: 'Verbs' }), { target: { value: 'get' } });
-    await fireEvent.click(screen.getByRole('button', { name: 'Add' }));
+    await fireEvent.click(screen.getByRole('checkbox', { name: 'pods' }));
+    await fireEvent.click(screen.getByRole('checkbox', { name: 'get' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Add rules' }));
 
     await waitFor(() => expect(screen.getByText('No role named pod-reader')).toBeDefined());
   });
