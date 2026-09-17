@@ -41,6 +41,7 @@ onMount(() => {
   subscribers.push(states.stateClusterRolesData.subscribe());
   subscribers.push(states.stateRoleBindingsData.subscribe());
   subscribers.push(states.stateClusterRoleBindingsData.subscribe());
+  subscribers.push(states.stateApiResourcesData.subscribe());
 });
 
 onDestroy(() => {

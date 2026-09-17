@@ -19,6 +19,7 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import type {
+  ApiResourcesData,
   ClusterRoleBindingsData,
   ClusterRolesData,
   IamApi,
@@ -41,6 +42,7 @@ let rolesStateMock: FakeStateObject<RolesData, void>;
 let clusterRolesStateMock: FakeStateObject<ClusterRolesData, void>;
 let roleBindingsStateMock: FakeStateObject<RoleBindingsData, void>;
 let clusterRoleBindingsStateMock: FakeStateObject<ClusterRoleBindingsData, void>;
+let apiResourcesStateMock: FakeStateObject<ApiResourcesData, void>;
 
 beforeEach(() => {
   vi.resetAllMocks();
@@ -58,10 +60,12 @@ beforeEach(() => {
   clusterRolesStateMock = new FakeStateObject();
   roleBindingsStateMock = new FakeStateObject();
   clusterRoleBindingsStateMock = new FakeStateObject();
+  apiResourcesStateMock = new FakeStateObject();
   statesMocks.mock<RolesData, void>('stateRolesData', rolesStateMock);
   statesMocks.mock<ClusterRolesData, void>('stateClusterRolesData', clusterRolesStateMock);
   statesMocks.mock<RoleBindingsData, void>('stateRoleBindingsData', roleBindingsStateMock);
   statesMocks.mock<ClusterRoleBindingsData, void>('stateClusterRoleBindingsData', clusterRoleBindingsStateMock);
+  statesMocks.mock<ApiResourcesData, void>('stateApiResourcesData', apiResourcesStateMock);
   vi.spyOn(uiSvelte, 'Table').mockImplementation(vi.fn());
 });
 
@@ -193,6 +197,11 @@ describe('UserDetails', () => {
     roleBindingsStateMock.setData({ roleBindings: [] });
 
     await waitFor(() => expect(remoteMocks.get(API_IAM).getUserDetails).toHaveBeenCalledTimes(2));
+  });
+
+  test('subscribes to api resources while the page is mounted', async () => {
+    await renderDetails();
+    expect(apiResourcesStateMock.subscribe).toHaveBeenCalled();
   });
 
   test('creates a namespaced role bound to the user', async () => {
