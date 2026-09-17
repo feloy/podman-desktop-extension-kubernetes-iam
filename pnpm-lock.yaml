@@ -32,7 +32,7 @@ overrides:
   js-yaml@>=5.0.0 <5.3.0: '>=5.3.0'
 
 patchedDependencies:
-  '@podman-desktop/kubernetes-dashboard-extension-api': e9aa70c3fbf7afc1642d84bf17d90879d201f1238c0b499f411e8fb3e0ed2c07
+  '@podman-desktop/kubernetes-dashboard-extension-api@0.5.0': e9aa70c3fbf7afc1642d84bf17d90879d201f1238c0b499f411e8fb3e0ed2c07
 
 importers:
 
