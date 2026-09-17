@@ -29,6 +29,7 @@ import { API_IAM, API_SUBSCRIBE, IDisposable } from '@kubernetes-iam/channels';
 import { ChannelSubscriber } from '/@/manager/channel-subscriber';
 import { Dispatcher } from '/@/manager/dispatcher';
 import { DashboardStatesManager } from './manager/dashboard-states-manager';
+import { ApiResourcesManager } from './manager/api-resources-manager';
 
 export class IamExtension {
   #container: Container | undefined;
@@ -39,6 +40,7 @@ export class IamExtension {
   #iamManager: IamManager;
   #channelSubscriber: ChannelSubscriber;
   #dispatcher: Dispatcher;
+  #apiResourcesManager: ApiResourcesManager;
   #dashboardStatesManager: DashboardStatesManager;
 
   constructor(readonly extensionContext: ExtensionContext) {
@@ -60,9 +62,11 @@ export class IamExtension {
     this.#iamManager = await this.#container.getAsync(IamManager);
     this.#channelSubscriber = await this.#container.getAsync(ChannelSubscriber);
     this.#dispatcher = await this.#container.getAsync(Dispatcher);
+    this.#apiResourcesManager = await this.#container.getAsync(ApiResourcesManager);
     this.#dashboardStatesManager = await this.#container.getAsync(DashboardStatesManager);
+    this.#apiResourcesManager.init();
     this.#dashboardStatesManager.init();
-    this.#extensionContext.subscriptions.push(this.#dashboardStatesManager);
+    this.#extensionContext.subscriptions.push(this.#apiResourcesManager, this.#dashboardStatesManager);
 
     this.#dispatcher.init();
 

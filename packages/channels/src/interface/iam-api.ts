@@ -149,6 +149,14 @@ export interface IamApi {
    */
   addRulesToClusterRole(request: AddClusterRoleRulesRequest): Promise<void>;
 
+  /**
+   * Starts a discovery pass of the API resources of the current context.
+   *
+   * Returns immediately: the pass can take longer than the RPC timeout, and its result is
+   * pushed on the `API_RESOURCES` channel rather than returned here.
+   */
+  refreshApiResources(): Promise<void>;
+
   generateKubeconfig(request: GenerateKubeconfigRequest): Promise<void>;
 
   getUserDetails(request: GetUserDetailsRequest): Promise<UserDetailsData>;

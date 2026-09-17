@@ -24,6 +24,7 @@ import { Dispatcher } from '/@/manager/dispatcher';
 import { DashboardStatesManager } from './dashboard-states-manager';
 import { DashboardApiManager } from '/@/manager/dashboard-api-manager';
 import { KubeconfigGenerator } from '/@/manager/kubeconfig-generator';
+import { ApiResourcesManager } from '/@/manager/api-resources-manager';
 
 const managersModule = new ContainerModule(options => {
   options.bind<IamManager>(IamManager).toSelf().inSingletonScope();
@@ -32,6 +33,7 @@ const managersModule = new ContainerModule(options => {
   options.bind<Dispatcher>(Dispatcher).toSelf().inSingletonScope();
   options.bind<DashboardStatesManager>(DashboardStatesManager).toSelf().inSingletonScope();
   options.bind<DashboardApiManager>(DashboardApiManager).toSelf().inSingletonScope();
+  options.bind<ApiResourcesManager>(ApiResourcesManager).toSelf().inSingletonScope();
 });
 
 export { managersModule };

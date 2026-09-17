@@ -20,13 +20,24 @@ import { RpcChannel } from '@kubernetes-iam/rpc';
 import { inject, injectable, multiInject } from 'inversify';
 import { DispatcherObject } from '/@/dispatcher/util/dispatcher-object';
 import { ChannelSubscriber } from '/@/manager/channel-subscriber';
-import { ROLES, ROLE_BINDINGS, CLUSTER_ROLES, CLUSTER_ROLE_BINDINGS, USERS } from '@kubernetes-iam/channels';
+import {
+  ROLES,
+  ROLE_BINDINGS,
+  CLUSTER_ROLES,
+  CLUSTER_ROLE_BINDINGS,
+  USERS,
+  API_RESOURCES,
+} from '@kubernetes-iam/channels';
 import { DashboardStatesManager } from '/@/manager/dashboard-states-manager';
+import { ApiResourcesManager } from '/@/manager/api-resources-manager';
 
 @injectable()
 export class Dispatcher {
   @inject(DashboardStatesManager)
   private dashboardStatesManager: DashboardStatesManager;
+
+  @inject(ApiResourcesManager)
+  private apiResourcesManager: ApiResourcesManager;
 
   #dispatchers: Map<string, DispatcherObject<unknown>> = new Map();
   #channelSubscriber: ChannelSubscriber;
@@ -56,6 +67,9 @@ export class Dispatcher {
     });
     this.dashboardStatesManager.onUsersChange(async () => {
       await this.dispatch(USERS);
+    });
+    this.apiResourcesManager.onApiResourcesChange(async () => {
+      await this.dispatch(API_RESOURCES);
     });
     this.#channelSubscriber.onSubscribe(async channelName => await this.dispatchByChannelName(channelName));
   }
