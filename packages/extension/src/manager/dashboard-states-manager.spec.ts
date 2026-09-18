@@ -21,6 +21,7 @@ import { DashboardStatesManager } from './dashboard-states-manager';
 import type { Disposable, ExtensionContext, TelemetryLogger } from '@podman-desktop/api';
 import { extensions } from '@podman-desktop/api';
 import type {
+  ContextsHealthsInfo,
   KubernetesDashboardExtensionApi,
   KubernetesDashboardSubscriber,
 } from '@podman-desktop/kubernetes-dashboard-extension-api';
@@ -41,6 +42,28 @@ let container: Container;
 const dashboardApiManagerMock: DashboardApiManager = {
   getApi: vi.fn(),
 } as unknown as DashboardApiManager;
+
+const REACHABLE_CONTEXTS_HEALTH: ContextsHealthsInfo = {
+  healths: [
+    {
+      contextName: 'ctx1',
+      checking: false,
+      reachable: true,
+      offline: false,
+    },
+  ],
+};
+
+const UNREACHABLE_CONTEXTS_HEALTH: ContextsHealthsInfo = {
+  healths: [
+    {
+      contextName: 'ctx1',
+      checking: true,
+      reachable: false,
+      offline: false,
+    },
+  ],
+};
 
 beforeEach(async () => {
   vi.resetAllMocks();
@@ -92,12 +115,12 @@ describe('dashboard extension is installed after init (onDidChange)', () => {
   const disposeSubscriber: () => void = vi.fn();
   let onResourceUpdateMock: ReturnType<typeof vi.fn>;
   let onContextsHealthMock: ReturnType<typeof vi.fn>;
-  let fireContextsHealth: () => void;
+  let fireContextsHealth: (event?: ContextsHealthsInfo) => void;
 
   beforeEach(() => {
     onResourceUpdateMock = vi.fn().mockReturnValue({ dispose: vi.fn() });
-    onContextsHealthMock = vi.fn().mockImplementation((listener: () => void) => {
-      fireContextsHealth = listener;
+    onContextsHealthMock = vi.fn().mockImplementation((listener: (event: ContextsHealthsInfo) => void) => {
+      fireContextsHealth = (event = REACHABLE_CONTEXTS_HEALTH): void => listener(event);
       return { dispose: vi.fn() };
     });
     vi.mocked(extensions.onDidChange).mockImplementation(f => {
@@ -160,6 +183,29 @@ describe('dashboard extension is installed after init (onDidChange)', () => {
     });
     expect(onContextsHealthMock).toHaveBeenCalled();
     expect(onResourceUpdateMock).not.toHaveBeenCalled();
+  });
+
+  test('does not subscribe to onResourceUpdate when no context is reachable', async () => {
+    manager = container.get(DashboardStatesManager);
+    manager.init();
+    await vi.waitFor(() => {
+      expect(manager.getSubscriber()).toBeDefined();
+    });
+    fireContextsHealth({ healths: [] });
+    fireContextsHealth(UNREACHABLE_CONTEXTS_HEALTH);
+    expect(onResourceUpdateMock).not.toHaveBeenCalled();
+  });
+
+  test('subscribes after a later health event reports a reachable context', async () => {
+    manager = container.get(DashboardStatesManager);
+    manager.init();
+    await vi.waitFor(() => {
+      expect(manager.getSubscriber()).toBeDefined();
+    });
+    fireContextsHealth({ healths: [] });
+    expect(onResourceUpdateMock).not.toHaveBeenCalled();
+    fireContextsHealth();
+    expect(onResourceUpdateMock).toHaveBeenCalledTimes(4);
   });
 
   test('subscribes to four resource types after onContextsHealth fires', async () => {
@@ -273,12 +319,12 @@ describe('dashboard extension is already installed at init time', () => {
   const disposeSubscriber: () => void = vi.fn();
   let onResourceUpdateMock: ReturnType<typeof vi.fn>;
   let onContextsHealthMock: ReturnType<typeof vi.fn>;
-  let fireContextsHealth: () => void;
+  let fireContextsHealth: (event?: ContextsHealthsInfo) => void;
 
   beforeEach(() => {
     onResourceUpdateMock = vi.fn().mockReturnValue({ dispose: vi.fn() });
-    onContextsHealthMock = vi.fn().mockImplementation((listener: () => void) => {
-      fireContextsHealth = listener;
+    onContextsHealthMock = vi.fn().mockImplementation((listener: (event: ContextsHealthsInfo) => void) => {
+      fireContextsHealth = (event = REACHABLE_CONTEXTS_HEALTH): void => listener(event);
       return { dispose: vi.fn() };
     });
     vi.mocked(extensions.onDidChange).mockReturnValue({

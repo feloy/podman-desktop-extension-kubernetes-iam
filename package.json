@@ -25,6 +25,7 @@
     "test:webview": "vitest run --project webview --passWithNoTests",
     "test:channels": "vitest run --project channels --passWithNoTests",
     "test": "pnpm run test:extension && pnpm run test:webview && pnpm run test:channels",
+    "test:e2e:integration": "cd tests/playwright && npm run test:e2e:integration",
     "typecheck:rpc": "tsc --noEmit --project packages/rpc",
     "typecheck:channels": "tsc --noEmit --project packages/channels",
     "typecheck:webview": "cd packages/webview && pnpm check",
@@ -70,7 +71,8 @@
     "isomorphic-ws": "^5.0.0"
   },
   "workspaces": [
-    "packages/*"
+    "packages/*",
+    "tests/*"
   ],
   "packageManager": "pnpm@11.16.0+sha512.b767e9a98fc87aec0f42daefcd0e84941c2cdb45d73c4e1e68860fb2bdfdbe032ab592105479e5e05c237f740c8a5ffdbbb52385797ddc2296745a1bbb883e8d"
 }
