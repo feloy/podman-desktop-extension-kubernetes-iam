@@ -198,5 +198,14 @@ test.describe.serial(`Extension usage`, { tag: '@integration' }, () => {
     await playExpect(roleRow).toBeVisible({ timeout: 30_000 });
     await playExpect(roleRow.getByRole('cell', { name: 'ClusterRole', exact: true })).toBeVisible();
     await playExpect(roleRow.getByRole('cell', { name: 'user1-cluster-admin', exact: true })).toBeVisible();
+
+    const resourceRuleRow = details.getRuleRow('*');
+    await playExpect(resourceRuleRow).toBeVisible({ timeout: 30_000 });
+    await playExpect(resourceRuleRow.getByRole('cell', { name: '*', exact: true })).toHaveCount(3);
+
+    const nonResourceRuleRow = details.getRuleRow('non-resource');
+    await playExpect(nonResourceRuleRow).toBeVisible({ timeout: 30_000 });
+    await playExpect(nonResourceRuleRow.getByRole('cell', { name: 'non-resource', exact: true })).toBeVisible();
+    await playExpect(nonResourceRuleRow.getByRole('cell', { name: '*', exact: true })).toHaveCount(2);
   });
 });

@@ -33,4 +33,8 @@ export class UserDetailsPage extends DetailsPage {
   getRoleRow(roleName: string): Locator {
     return this.page.getByRole('row', { name: roleName, exact: true });
   }
+
+  getRuleRow(ruleName: string): Locator {
+    return this.page.getByRole('row', { name: ruleName, exact: true });
+  }
 }
