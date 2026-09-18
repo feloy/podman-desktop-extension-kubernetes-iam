@@ -16,6 +16,7 @@
  * SPDX-License-Identifier: Apache-2.0
  ***********************************************************************/
 
+import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -46,6 +47,23 @@ const CATALOG_STATUS_ACTIVE: string = 'ACTIVE';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const ENVTEST_KUBECONFIG = path.resolve(__dirname, '..', '..', 'resources', 'envtest-kubeconfig');
+const USER1_CLUSTER_ROLE_BINDING = path.resolve(__dirname, '..', '..', 'resources', 'user1-clusterrolebinding.yaml');
+
+function kubectlBinary(): string {
+  const assets = process.env.KUBEBUILDER_ASSETS;
+  if (assets) {
+    return path.join(assets, process.platform === 'win32' ? 'kubectl.exe' : 'kubectl');
+  }
+  return 'kubectl';
+}
+
+function applyUser1ClusterRoleBinding(kubeconfigPath: string): void {
+  execFileSync(kubectlBinary(), ['apply', '-f', USER1_CLUSTER_ROLE_BINDING], {
+    env: { ...process.env, KUBECONFIG: kubeconfigPath },
+    stdio: 'pipe',
+  });
+}
 
 test.use({
   runnerOptions: new RunnerOptions({
@@ -139,10 +157,12 @@ test.describe(`Extension installation and verification`, { tag: '@integration' }
 test.describe(`Configure kubeconfig file`, { tag: '@integration' }, () => {
   test('Load kubeconfig file in Preferences', async ({ page, navigationBar }) => {
     // copy testing kubeconfig file to the expected location
-    const kubeConfigPathSrc = path.resolve(__dirname, '..', '..', 'resources', 'envtest-kubeconfig');
+    const kubeConfigPathSrc = ENVTEST_KUBECONFIG;
     const kubeConfigPathDst = path.resolve(__dirname, '..', 'tests', 'playwright', 'resources', 'kube-config');
     fs.mkdirSync(path.dirname(kubeConfigPathDst), { recursive: true });
     fs.copyFileSync(kubeConfigPathSrc, kubeConfigPathDst);
+    // envtest --users only issues a client cert; IAM lists User subjects from bindings.
+    applyUser1ClusterRoleBinding(kubeConfigPathSrc);
 
     // open preferences page
     const settingsBar = await navigationBar.openSettings();
@@ -163,5 +183,6 @@ test.describe(`Extension usage`, { tag: '@integration' }, () => {
     const usersPage = new UsersPage(webview);
     await playExpect(usersPage.heading).toBeVisible({ timeout: 30_000 });
     await playExpect(usersPage.createUserButton).toBeVisible();
+    await playExpect(usersPage.getUserButton('user1')).toBeVisible({ timeout: 60_000 });
   });
 });

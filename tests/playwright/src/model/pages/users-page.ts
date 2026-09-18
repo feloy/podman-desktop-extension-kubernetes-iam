@@ -29,4 +29,8 @@ export class UsersPage extends MainPage {
       name: 'Create user',
     });
   }
+
+  getUserButton(userName: string): Locator {
+    return this.page.getByRole('button', { name: userName, exact: true });
+  }
 }
