@@ -18,6 +18,7 @@ import CreateRoleForUserDialog from './users/CreateRoleForUserDialog.svelte';
 import AddRuleDialog from './users/AddRuleDialog.svelte';
 import RoleActions from './users/RoleActions.svelte';
 import type { BindingRef, RoleRef, RoleRowUI } from './users/RoleRowUI';
+import { toRuleChildRow } from './users/role-rows';
 
 interface Props {
   name: string;
@@ -115,12 +116,7 @@ function toUI(d: UserDetailsData | undefined): RoleRowUI[] {
       onRevoke: (): void => {
         revoke(binding).catch(console.error);
       },
-      children: r.rules.map(rule => ({
-        name: rule.apiGroups.map(g => (g === '' ? 'core' : g)).join(', ') || '*',
-        col2: rule.resources.join(', ') || '*',
-        col3: rule.verbs.join(', '),
-        col4: rule.resourceNames?.join(', ') ?? '',
-      })),
+      children: r.rules.map(toRuleChildRow),
     };
   });
 }

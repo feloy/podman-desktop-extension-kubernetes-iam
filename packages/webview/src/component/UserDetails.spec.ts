@@ -138,6 +138,32 @@ async function revokeRole(binding: { roleKind: string; bindingKind: string; name
 }
 
 describe('UserDetails', () => {
+  test('displays a non-resource URL rule apart from a wildcard resource rule', async () => {
+    vi.mocked(remoteMocks.get(API_IAM).getUserDetails).mockResolvedValue({
+      name: 'alice',
+      kind: 'User',
+      roles: [
+        {
+          bindingName: 'user1-cluster-admin',
+          bindingKind: 'ClusterRoleBinding',
+          roleName: 'cluster-admin',
+          roleKind: 'ClusterRole',
+          rules: [
+            { apiGroups: ['*'], resources: ['*'], verbs: ['*'] },
+            { apiGroups: [], resources: [], verbs: ['*'], nonResourceURLs: ['*'] },
+          ],
+        },
+      ],
+    });
+    await renderDetails();
+
+    await waitFor(() => expect(uiSvelte.Table).toHaveBeenCalled());
+    expect(lastRows()[0].children).toEqual([
+      { name: '*', col2: '*', col3: '*', col4: '' },
+      { name: 'non-resource', col2: '*', col3: '*', col4: '' },
+    ]);
+  });
+
   test('displays the roles of the user', async () => {
     vi.mocked(remoteMocks.get(API_IAM).getUserDetails).mockResolvedValue({
       name: 'alice',
