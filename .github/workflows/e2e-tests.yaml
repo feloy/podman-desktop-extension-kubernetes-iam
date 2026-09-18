@@ -153,6 +153,12 @@ jobs:
           brew install kubectl
           kubectl version --client
 
+      - name: Install ffmpeg for xvfb recording
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+
       # Run tests
       - name: Run Integration tests
         shell: bash
@@ -195,3 +201,4 @@ jobs:
           path: |
             tests/playwright/output/
             tests/playwright/tests/
+            tests/playwright/recordings/
