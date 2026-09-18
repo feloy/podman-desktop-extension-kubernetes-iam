@@ -7,3 +7,6 @@ dist
 .idea
 output
 packages/extension/media
+/tests/playwright/tests/
+/tests/resources/envtest-kubeconfig
+/tests/resources/envtest-kubeconfig-user1

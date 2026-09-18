@@ -1,0 +1,18 @@
+{
+  "name": "kubernetes-iam-tests-playwright",
+  "version": "0.1.0-next",
+  "description": "Kubernetes IAM extension Playwright E2E tests",
+  "scripts": {
+    "test:e2e:integration": "xvfb-maybe --auto-servernum --server-args='-screen 0 1280x960x24' -- npx playwright test src/ --grep @integration"
+  },
+  "publisher": "podman-desktop",
+  "license": "Apache-2.0",
+  "devDependencies": {
+    "@playwright/test": "^1.63.0",
+    "@podman-desktop/tests-playwright": "1.29.1",
+    "@types/node": "^24",
+    "typescript": "^5.9.3",
+    "xvfb-maybe": "^0.2.1"
+  },
+  "type": "module"
+}
