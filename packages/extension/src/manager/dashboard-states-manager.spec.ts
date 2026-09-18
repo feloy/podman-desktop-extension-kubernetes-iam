@@ -24,7 +24,6 @@ import type {
   ContextsHealthsInfo,
   KubernetesDashboardExtensionApi,
   KubernetesDashboardSubscriber,
-  ContextsHealthsInfo,
 } from '@podman-desktop/kubernetes-dashboard-extension-api';
 import { InversifyBinding } from '/@/inject/inversify-binding';
 import type { RpcExtension } from '@kubernetes-iam/rpc';
