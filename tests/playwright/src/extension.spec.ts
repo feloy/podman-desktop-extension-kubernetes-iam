@@ -21,6 +21,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import type { Page } from '@playwright/test';
 import type { ExtensionsPage } from '@podman-desktop/tests-playwright';
 import {
   expect as playExpect,
@@ -177,12 +178,25 @@ test.describe(`Configure kubeconfig file`, { tag: '@integration' }, () => {
   });
 });
 
-test.describe(`Extension usage`, { tag: '@integration' }, () => {
+test.describe.serial(`Extension usage`, { tag: '@integration' }, () => {
+  let webview: Page;
+
   test('Open IAM webview and display the Users page', async ({ runner, page, navigationBar }) => {
-    const [, webview] = await handleWebview(runner, page, navigationBar);
+    [, webview] = await handleWebview(runner, page, navigationBar);
     const usersPage = new UsersPage(webview);
     await playExpect(usersPage.heading).toBeVisible({ timeout: 30_000 });
     await playExpect(usersPage.createUserButton).toBeVisible();
     await playExpect(usersPage.getUserButton('user1')).toBeVisible({ timeout: 60_000 });
+  });
+
+  test('Open user1 details and display the bound cluster-admin role', async () => {
+    const usersPage = new UsersPage(webview);
+    const details = await usersPage.openUser('user1');
+    await playExpect(details.heading).toBeVisible({ timeout: 30_000 });
+    await playExpect(details.addClusterRoleButton).toBeVisible();
+    const roleRow = details.getRoleRow('cluster-admin');
+    await playExpect(roleRow).toBeVisible({ timeout: 30_000 });
+    await playExpect(roleRow.getByRole('cell', { name: 'ClusterRole', exact: true })).toBeVisible();
+    await playExpect(roleRow.getByRole('cell', { name: 'user1-cluster-admin', exact: true })).toBeVisible();
   });
 });

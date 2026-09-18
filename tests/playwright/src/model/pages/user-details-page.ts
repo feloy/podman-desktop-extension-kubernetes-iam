@@ -18,26 +18,19 @@
 
 import type { Locator, Page } from '@playwright/test';
 
-import { MainPage } from '@podman-desktop/tests-playwright';
+import { DetailsPage } from '@podman-desktop/tests-playwright';
 
-import { UserDetailsPage } from './user-details-page';
+export class UserDetailsPage extends DetailsPage {
+  readonly addRoleButton: Locator;
+  readonly addClusterRoleButton: Locator;
 
-export class UsersPage extends MainPage {
-  readonly createUserButton: Locator;
-
-  constructor(page: Page) {
-    super(page, 'Users');
-    this.createUserButton = this.additionalActions.getByRole('button', {
-      name: 'Create user',
-    });
+  constructor(page: Page, userName: string) {
+    super(page, userName);
+    this.addRoleButton = this.controlActions.getByRole('button', { name: 'Add role', exact: true });
+    this.addClusterRoleButton = this.controlActions.getByRole('button', { name: 'Add cluster role' });
   }
 
-  getUserButton(userName: string): Locator {
-    return this.page.getByRole('button', { name: userName, exact: true });
-  }
-
-  async openUser(userName: string): Promise<UserDetailsPage> {
-    await this.getUserButton(userName).click();
-    return new UserDetailsPage(this.page, userName);
+  getRoleRow(roleName: string): Locator {
+    return this.page.getByRole('row', { name: roleName, exact: true });
   }
 }
