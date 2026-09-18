@@ -17,7 +17,10 @@
  ***********************************************************************/
 
 import { Disposable, extensions } from '@podman-desktop/api';
-import type { KubernetesDashboardSubscriber } from '@podman-desktop/kubernetes-dashboard-extension-api';
+import type {
+  ContextsHealthsInfo,
+  KubernetesDashboardSubscriber,
+} from '@podman-desktop/kubernetes-dashboard-extension-api';
 import { inject, injectable } from 'inversify';
 import { Emitter, Event } from '/@/types/emitter';
 import { DashboardApiManager } from '/@/manager/dashboard-api-manager';
@@ -93,8 +96,13 @@ export class DashboardStatesManager implements Disposable {
     this.#subscriptions.push(this.#subscriber);
 
     this.#subscriptions.push(
-      this.#subscriber.onContextsHealth(() => {
-        this.#subscribeToResources();
+      this.#subscriber.onContextsHealth((event: ContextsHealthsInfo) => {
+        // Dashboard skips starting lazy informers when no current context exists yet.
+        // The first health event is often empty (before kubeconfig is selected), so wait
+        // until a context is reachable before subscribing.
+        if (event.healths.some(health => health.reachable)) {
+          this.#subscribeToResources();
+        }
       }),
     );
 
