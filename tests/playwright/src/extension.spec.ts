@@ -46,6 +46,7 @@ const IAM_EXTENSION_LABEL: string = 'podman-desktop.kubernetes-iam';
 const IAM_EXTENSION_NAME: string = 'Kubernetes IAM';
 const CATALOG_STATUS_ACTIVE: string = 'ACTIVE';
 const E2E_USER_NAME: string = 'e2e-user';
+const E2E_USER_CONTEXT_NAME: string = `envtest-${E2E_USER_NAME}`;
 const E2E_ROLE_NAME: string = 'e2e-pod-reader';
 const E2E_CLUSTER_ROLE_NAME: string = 'e2e-node-reader';
 const E2E_ROLE_NAMESPACE: string = 'default';
@@ -56,7 +57,9 @@ const USER1_SECOND_CLUSTER_ROLE_BINDING_NAME: string = 'user1-cluster-admin-seco
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const ENVTEST_KUBECONFIG = path.resolve(__dirname, '..', '..', 'resources', 'envtest-kubeconfig');
+const PODMAN_DESKTOP_KUBECONFIG = path.resolve(__dirname, '..', 'tests', 'playwright', 'resources', 'kube-config');
 const USER1_CLUSTER_ROLE_BINDING = path.resolve(__dirname, '..', '..', 'resources', 'user1-clusterrolebinding.yaml');
+const E2E_TEST_CERTIFICATE = path.resolve(__dirname, '..', '..', 'resources', 'e2e-test-certificate.pem');
 
 function kubectlBinary(): string {
   const assets = process.env.KUBEBUILDER_ASSETS;
@@ -104,6 +107,46 @@ function kubernetesResourceExists(kubeconfigPath: string, resource: string, name
   } catch {
     return false;
   }
+}
+
+function certificateSigningRequestNames(kubeconfigPath: string): string[] {
+  const result = JSON.parse(
+    execFileSync(kubectlBinary(), ['get', 'certificatesigningrequests', '--output=json'], {
+      env: { ...process.env, KUBECONFIG: kubeconfigPath },
+      encoding: 'utf8',
+      stdio: 'pipe',
+    }),
+  ) as object;
+  const items = (result as { items?: Array<{ metadata?: { name?: string } }> }).items ?? [];
+  return items.flatMap(item => (item.metadata?.name ? [item.metadata.name] : []));
+}
+
+function signCertificateSigningRequest(kubeconfigPath: string, name: string): void {
+  execFileSync(
+    kubectlBinary(),
+    [
+      'patch',
+      'certificatesigningrequest',
+      name,
+      '--subresource=status',
+      '--type=merge',
+      '--patch',
+      JSON.stringify({ status: { certificate: fs.readFileSync(E2E_TEST_CERTIFICATE).toString('base64') } }),
+    ],
+    {
+      env: { ...process.env, KUBECONFIG: kubeconfigPath },
+      stdio: 'pipe',
+    },
+  );
+}
+
+function certificateSigningRequestIsApproved(kubeconfigPath: string, name: string): boolean {
+  const csr = getKubernetesResource(kubeconfigPath, 'certificatesigningrequest', name) as {
+    status?: { conditions?: Array<{ type?: string; status?: string }> };
+  };
+  return (
+    csr.status?.conditions?.some(condition => condition.type === 'Approved' && condition.status === 'True') ?? false
+  );
 }
 
 function setClusterRoleBindingUsers(kubeconfigPath: string, name: string, usernames: string[]): void {
@@ -235,9 +278,8 @@ test.describe(`Configure kubeconfig file`, { tag: '@integration' }, () => {
   test('Load kubeconfig file in Preferences', async ({ page, navigationBar }) => {
     // copy testing kubeconfig file to the expected location
     const kubeConfigPathSrc = ENVTEST_KUBECONFIG;
-    const kubeConfigPathDst = path.resolve(__dirname, '..', 'tests', 'playwright', 'resources', 'kube-config');
-    fs.mkdirSync(path.dirname(kubeConfigPathDst), { recursive: true });
-    fs.copyFileSync(kubeConfigPathSrc, kubeConfigPathDst);
+    fs.mkdirSync(path.dirname(PODMAN_DESKTOP_KUBECONFIG), { recursive: true });
+    fs.copyFileSync(kubeConfigPathSrc, PODMAN_DESKTOP_KUBECONFIG);
     // envtest --users only issues a client cert; IAM lists User subjects from bindings.
     applyUser1ClusterRoleBinding(kubeConfigPathSrc);
 
@@ -247,7 +289,7 @@ test.describe(`Configure kubeconfig file`, { tag: '@integration' }, () => {
     const preferencesPage = await settingsBar.openTabPage(PreferencesPage);
     await playExpect(preferencesPage.heading).toBeVisible();
 
-    await preferencesPage.selectKubeFile(kubeConfigPathDst);
+    await preferencesPage.selectKubeFile(PODMAN_DESKTOP_KUBECONFIG);
 
     const statusbar = new StatusBar(page);
     await statusbar.validateKubernetesContext('envtest');
@@ -322,6 +364,42 @@ test.describe.serial(`Extension usage`, { tag: '@integration' }, () => {
       roleRef: { kind: 'ClusterRole', name: 'system:basic-user' },
       subjects: [{ kind: 'User', name: E2E_USER_NAME }],
     });
+  });
+
+  test('Generate kubeconfig and add its context to the selected file', async () => {
+    test.setTimeout(80_000);
+
+    const usersPage = new UsersPage(webview);
+    const downloadButton = usersPage.getDownloadKubeconfigButton(E2E_USER_NAME);
+    const csrNamesBefore = new Set(certificateSigningRequestNames(ENVTEST_KUBECONFIG));
+    const kubeconfigBefore = fs.readFileSync(PODMAN_DESKTOP_KUBECONFIG, 'utf8');
+    playExpect(kubeconfigBefore).not.toContain(E2E_USER_CONTEXT_NAME);
+
+    await playExpect(downloadButton).toBeVisible();
+    await downloadButton.click();
+    await playExpect(downloadButton).toHaveAttribute('aria-busy', 'true');
+
+    // envtest provides only an API server, so this test supplies the signer response.
+    let csrName: string | undefined;
+    await playExpect
+      .poll(
+        () => {
+          csrName = certificateSigningRequestNames(ENVTEST_KUBECONFIG).find(name => !csrNamesBefore.has(name));
+          return csrName;
+        },
+        { timeout: 30_000 },
+      )
+      .toBeTruthy();
+    if (!csrName) {
+      throw new Error('Generated CSR was not found');
+    }
+    const generatedCsrName = csrName;
+    await playExpect.poll(() => certificateSigningRequestIsApproved(ENVTEST_KUBECONFIG, generatedCsrName)).toBeTruthy();
+    signCertificateSigningRequest(ENVTEST_KUBECONFIG, generatedCsrName);
+
+    await playExpect
+      .poll(() => fs.readFileSync(PODMAN_DESKTOP_KUBECONFIG, 'utf8'), { timeout: 60_000 })
+      .toContain(E2E_USER_CONTEXT_NAME);
   });
 
   test('Bind user1 cluster-admin role to e2e-user and revoke user1', async () => {
