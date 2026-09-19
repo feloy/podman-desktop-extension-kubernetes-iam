@@ -1,6 +1,20 @@
+<style>
+.scroll-shadow {
+  height: 0.3125rem;
+}
+
+.scroll-shadow-top {
+  background: linear-gradient(to bottom, rgb(0 0 0 / 0.22), transparent);
+}
+
+.scroll-shadow-bottom {
+  background: linear-gradient(to top, rgb(0 0 0 / 0.22), transparent);
+}
+</style>
+
 <script lang="ts">
 import { Button, ErrorMessage, Modal, Spinner } from '@podman-desktop/ui-svelte';
-import { getContext, onDestroy, untrack } from 'svelte';
+import { getContext, onDestroy, tick, untrack } from 'svelte';
 import { Remote } from '/@/remote/remote';
 import { API_IAM } from '@kubernetes-iam/channels';
 import type { ApiResourcesData, ApiResourcesStatus, IamApi } from '@kubernetes-iam/channels';
@@ -31,6 +45,9 @@ let adding = $state(false);
 let error: string | undefined = $state(undefined);
 let timedOut = $state(false);
 let deadline: ReturnType<typeof setTimeout> | undefined;
+let scrollArea: HTMLDivElement | undefined;
+let showTopScrollShadow = $state(false);
+let showBottomScrollShadow = $state(false);
 
 const data = $derived(states.stateApiResourcesData.data);
 const remoteStatus = $derived(data?.status ?? 'unknown');
@@ -70,6 +87,20 @@ $effect(() => {
 onDestroy(() => {
   clearDeadline();
 });
+
+$effect(() => {
+  status;
+  selectedResources.length;
+  selectedVerbs.length;
+  resourceNames.length;
+  void tick().then(updateScrollShadows, console.error);
+});
+
+function updateScrollShadows(): void {
+  if (!scrollArea) return;
+  showTopScrollShadow = scrollArea.scrollTop > 1;
+  showBottomScrollShadow = scrollArea.scrollHeight - scrollArea.clientHeight - scrollArea.scrollTop > 1;
+}
 
 function emptyDiscovery(): ApiResourcesData {
   return { status: 'unknown', resources: [] };
@@ -150,51 +181,71 @@ async function onAdd(): Promise<void> {
 }
 </script>
 
+<svelte:window onresize={updateScrollShadows} />
+
 <Modal name="Add rule" onclose={onclose}>
-  <div class="flex max-h-[calc(100vh-8rem)] flex-col gap-4 overflow-y-auto p-6">
-    <h1 class="text-lg font-semibold text-(--pd-modal-text)">Add rule to {role.name}</h1>
+  <div class="flex h-[min(32rem,calc(100vh-8rem))] flex-col">
+    <header class="shrink-0 px-6 pt-6 pb-4">
+      <h1 class="text-lg font-semibold text-(--pd-modal-text)">Add rule to {role.name}</h1>
+    </header>
 
-    {#if status === 'unknown' || status === 'loading'}
-      <div class="flex flex-row items-center gap-2 text-sm text-(--pd-modal-text)">
-        <Spinner size="1.5em" label="Loading API resources" />
-        <span>Loading API resources…</span>
+    <div class="relative min-h-0 flex-1">
+      <div bind:this={scrollArea} onscroll={updateScrollShadows} class="h-full overflow-y-auto px-6">
+        <div class="flex flex-col gap-4">
+          {#if status === 'unknown' || status === 'loading'}
+            <div class="flex flex-row items-center gap-2 text-sm text-(--pd-modal-text)">
+              <Spinner size="1.5em" label="Loading API resources" />
+              <span>Loading API resources…</span>
+            </div>
+          {:else if status === 'error'}
+            {#if discoveryError}
+              <ErrorMessage error={discoveryError} />
+            {/if}
+            <Button type="secondary" onclick={onRetry}>Retry</Button>
+          {:else}
+            {#if data?.failedGroupVersions && data.failedGroupVersions.length > 0}
+              <p class="text-sm text-(--pd-input-field-placeholder-text)">
+                Some API groups could not be listed: {data.failedGroupVersions.join(', ')}
+              </p>
+            {/if}
+            <ResourceSelector resources={available} selected={selectedKeys} onToggle={toggleResource} />
+            <SelectedResources resources={selectedResources} onRemove={toggleResource} />
+            {#if selectedResources.length > 0}
+              <VerbSelector
+                available={availableVerbs}
+                selected={selectedVerbs}
+                onToggle={toggleVerb}
+                onReplace={replaceVerbs} />
+              <ResourceNamesInput
+                names={resourceNames}
+                verbs={selectedVerbs}
+                onChange={(names): void => {
+                  resourceNames = names;
+                }} />
+              <RulesPreview rules={rules} />
+            {/if}
+          {/if}
+        </div>
       </div>
-    {:else if status === 'error'}
-      {#if discoveryError}
-        <ErrorMessage error={discoveryError} />
+      {#if showTopScrollShadow}
+        <div class="scroll-shadow scroll-shadow-top pointer-events-none absolute top-0 right-0 left-0 z-10"></div>
       {/if}
-      <Button type="secondary" onclick={onRetry}>Retry</Button>
-    {:else}
-      {#if data?.failedGroupVersions && data.failedGroupVersions.length > 0}
-        <p class="text-sm text-(--pd-input-field-placeholder-text)">
-          Some API groups could not be listed: {data.failedGroupVersions.join(', ')}
-        </p>
+      {#if showBottomScrollShadow}
+        <div class="scroll-shadow scroll-shadow-bottom pointer-events-none absolute right-0 bottom-0 left-0 z-10"></div>
       {/if}
-      <ResourceSelector resources={available} selected={selectedKeys} onToggle={toggleResource} />
-      <SelectedResources resources={selectedResources} onRemove={toggleResource} />
-      {#if selectedResources.length > 0}
-        <VerbSelector
-          available={availableVerbs}
-          selected={selectedVerbs}
-          onToggle={toggleVerb}
-          onReplace={replaceVerbs} />
-        <ResourceNamesInput
-          names={resourceNames}
-          verbs={selectedVerbs}
-          onChange={(names): void => {
-            resourceNames = names;
-          }} />
-        <RulesPreview rules={rules} />
-      {/if}
-    {/if}
-
-    {#if error}
-      <ErrorMessage error={error} />
-    {/if}
-
-    <div class="flex justify-end gap-2">
-      <Button type="secondary" onclick={onclose}>Cancel</Button>
-      <Button inProgress={adding} disabled={!canAdd} onclick={onAdd}>Add rules</Button>
     </div>
+
+    <footer class="shrink-0 px-6 pt-4 pb-6">
+      {#if error}
+        <div class="mb-4">
+          <ErrorMessage error={error} />
+        </div>
+      {/if}
+
+      <div class="flex justify-end gap-2">
+        <Button type="secondary" onclick={onclose}>Cancel</Button>
+        <Button inProgress={adding} disabled={!canAdd} onclick={onAdd}>Add rules</Button>
+      </div>
+    </footer>
   </div>
 </Modal>

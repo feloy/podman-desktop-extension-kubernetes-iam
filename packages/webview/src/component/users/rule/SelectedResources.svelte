@@ -28,4 +28,6 @@ const { resources, onRemove }: Props = $props();
       {/each}
     </div>
   </div>
+{:else}
+  <p class="text-sm text-(--pd-input-field-placeholder-text)">No resource selected.</p>
 {/if}

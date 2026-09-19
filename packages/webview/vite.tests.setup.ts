@@ -21,3 +21,11 @@ import { vi } from 'vitest';
 Object.defineProperty(window, 'acquirePodmanDesktopApi', {
   value: vi.fn(),
 });
+
+// ui-svelte's Expandable uses Svelte transitions, which rely on the Web Animations API.
+// jsdom does not implement it.
+if (!Element.prototype.animate) {
+  Object.defineProperty(Element.prototype, 'animate', {
+    value: () => ({ cancel: vi.fn() }),
+  });
+}
