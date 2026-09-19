@@ -26,8 +26,8 @@ import type {
   CreateUserRequest,
   CreateRoleForUserRequest,
   CreateClusterRoleForUserRequest,
-  AddRoleRuleRequest,
-  AddClusterRoleRuleRequest,
+  AddRoleRulesRequest,
+  AddClusterRoleRulesRequest,
   PolicyRuleInfo,
   GenerateKubeconfigRequest,
   GetUserDetailsRequest,
@@ -44,6 +44,7 @@ import type { TelemetryLogger } from '@podman-desktop/api';
 import { window } from '@podman-desktop/api';
 import { DashboardApiManager } from '/@/manager/dashboard-api-manager';
 import { DashboardStatesManager } from '/@/manager/dashboard-states-manager';
+import { ApiResourcesManager } from '/@/manager/api-resources-manager';
 import { KubeconfigGenerator } from '/@/manager/kubeconfig-generator';
 import { isValidUsername, toBindingName } from '/@/manager/user-names';
 import { isValidNamespaceName, isValidResourceName } from '/@/manager/resource-names';
@@ -93,6 +94,38 @@ function checkedRule(rule: PolicyRuleInfo): PolicyRuleInfo {
     checked.resourceNames = resourceNames;
   }
   return checked;
+}
+
+function sameStrings(left: string[], right: string[]): boolean {
+  return left.length === right.length && left.every((value, index) => value === right[index]);
+}
+
+function rulesEqual(left: PolicyRuleInfo, right: PolicyRuleInfo): boolean {
+  return (
+    sameStrings(left.apiGroups, right.apiGroups) &&
+    sameStrings(left.resources, right.resources) &&
+    sameStrings(left.verbs, right.verbs) &&
+    sameStrings(left.resourceNames ?? [], right.resourceNames ?? []) &&
+    sameStrings(left.nonResourceURLs ?? [], right.nonResourceURLs ?? [])
+  );
+}
+
+/** Appends rules the role does not already hold, so re-submitting the same selection is a no-op. */
+function mergeRules(existing: PolicyRuleInfo[], added: PolicyRuleInfo[]): PolicyRuleInfo[] {
+  const merged = [...existing];
+  for (const rule of added) {
+    if (!merged.some(held => rulesEqual(held, rule))) {
+      merged.push(rule);
+    }
+  }
+  return merged;
+}
+
+function checkedRules(rules: PolicyRuleInfo[]): PolicyRuleInfo[] {
+  if (rules.length === 0) {
+    throw new Error('At least one rule is needed');
+  }
+  return rules.map(checkedRule);
 }
 
 /** What the operator answered to the confirmation of a revocation. */
@@ -149,6 +182,9 @@ export class IamManager implements IamApi {
 
   @inject(DashboardStatesManager)
   private dashboardStatesManager: DashboardStatesManager;
+
+  @inject(ApiResourcesManager)
+  private apiResourcesManager: ApiResourcesManager;
 
   @inject(KubeconfigGenerator)
   private kubeconfigGenerator: KubeconfigGenerator;
@@ -220,6 +256,11 @@ export class IamManager implements IamApi {
   async refreshRbacData(): Promise<void> {
     this.telemetryLogger.logUsage('refreshRbacData');
     // TODO: delegate to Dashboard API once RBAC capabilities are available
+  }
+
+  async refreshApiResources(): Promise<void> {
+    this.telemetryLogger.logUsage('refreshApiResources');
+    this.apiResourcesManager.refresh().catch(console.error);
   }
 
   async createUser(request: CreateUserRequest): Promise<void> {
@@ -385,8 +426,8 @@ export class IamManager implements IamApi {
     await this.getApi().deleteResource(roleRef.kind, roleRef.name, roleNamespace);
   }
 
-  async addRuleToRole(request: AddRoleRuleRequest): Promise<void> {
-    this.telemetryLogger.logUsage('addRuleToRole');
+  async addRulesToRole(request: AddRoleRulesRequest): Promise<void> {
+    this.telemetryLogger.logUsage('addRulesToRole');
     const name = request.name.trim();
     const namespace = request.namespace.trim();
     if (!isValidResourceName(name)) {
@@ -395,34 +436,44 @@ export class IamManager implements IamApi {
     if (!isValidNamespaceName(namespace)) {
       throw new Error(`Invalid namespace: ${request.namespace}`);
     }
-    const rule = checkedRule(request.rule);
+    const added = checkedRules(request.rules);
     const role = this.dashboardStatesManager.getRoles().roles.find(r => r.namespace === namespace && r.name === name);
     if (!role) {
       throw new Error(`No role named ${name} in namespace ${namespace}`);
     }
 
-    // The rules are applied as a whole: an apply carrying the new rule alone would drop
+    const rules = mergeRules(role.rules, added);
+    if (rules.length === role.rules.length) {
+      return;
+    }
+
+    // The rules are applied as a whole: an apply carrying the new rules alone would drop
     // the rules the role already holds.
     await this.applyManifests([
       {
         apiVersion: `${RBAC_API_GROUP}/v1`,
         kind: 'Role',
         metadata: { name, namespace },
-        rules: [...role.rules, rule],
+        rules,
       },
     ]);
   }
 
-  async addRuleToClusterRole(request: AddClusterRoleRuleRequest): Promise<void> {
-    this.telemetryLogger.logUsage('addRuleToClusterRole');
+  async addRulesToClusterRole(request: AddClusterRoleRulesRequest): Promise<void> {
+    this.telemetryLogger.logUsage('addRulesToClusterRole');
     const name = request.name.trim();
     if (!isValidResourceName(name)) {
       throw new Error(`Invalid cluster role name: ${request.name}`);
     }
-    const rule = checkedRule(request.rule);
+    const added = checkedRules(request.rules);
     const clusterRole = this.dashboardStatesManager.getClusterRoles().clusterRoles.find(r => r.name === name);
     if (!clusterRole) {
       throw new Error(`No cluster role named ${name}`);
+    }
+
+    const rules = mergeRules(clusterRole.rules, added);
+    if (rules.length === clusterRole.rules.length) {
+      return;
     }
 
     await this.applyManifests([
@@ -430,7 +481,7 @@ export class IamManager implements IamApi {
         apiVersion: `${RBAC_API_GROUP}/v1`,
         kind: 'ClusterRole',
         metadata: { name },
-        rules: [...clusterRole.rules, rule],
+        rules,
       },
     ]);
   }

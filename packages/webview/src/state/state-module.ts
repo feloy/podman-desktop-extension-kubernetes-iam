@@ -26,6 +26,7 @@ import { StateRoleBindingsData } from '/@/state/role-bindings.svelte';
 import { StateClusterRolesData } from '/@/state/cluster-roles.svelte';
 import { StateClusterRoleBindingsData } from '/@/state/cluster-role-bindings.svelte';
 import { StateUsersData } from '/@/state/users.svelte';
+import { StateApiResourcesData } from '/@/state/api-resources.svelte';
 
 const statesModule = new ContainerModule(options => {
   options.bind(States).toSelf().inSingletonScope();
@@ -49,6 +50,10 @@ const statesModule = new ContainerModule(options => {
   options.bind(StateUsersData).toSelf().inSingletonScope();
   options.bind(StateObject).toService(StateUsersData);
   options.bind(IDisposable).toService(StateUsersData);
+
+  options.bind(StateApiResourcesData).toSelf().inSingletonScope();
+  options.bind(StateObject).toService(StateApiResourcesData);
+  options.bind(IDisposable).toService(StateApiResourcesData);
 });
 
 export { statesModule };

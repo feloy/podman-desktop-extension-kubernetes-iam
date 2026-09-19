@@ -60,15 +60,15 @@ export interface CreateClusterRoleForUserRequest {
   name: string;
 }
 
-export interface AddRoleRuleRequest {
+export interface AddRoleRulesRequest {
   namespace: string;
   name: string;
-  rule: PolicyRuleInfo;
+  rules: PolicyRuleInfo[];
 }
 
-export interface AddClusterRoleRuleRequest {
+export interface AddClusterRoleRulesRequest {
   name: string;
-  rule: PolicyRuleInfo;
+  rules: PolicyRuleInfo[];
 }
 
 export interface RevokeRoleFromUserRequest {
@@ -140,14 +140,22 @@ export interface IamApi {
   revokeRoleFromUser(request: RevokeRoleFromUserRequest): Promise<void>;
 
   /**
-   * Appends a rule to the rules of an existing Role.
+   * Appends rules to an existing Role in a single apply.
    */
-  addRuleToRole(request: AddRoleRuleRequest): Promise<void>;
+  addRulesToRole(request: AddRoleRulesRequest): Promise<void>;
 
   /**
-   * Appends a rule to the rules of an existing ClusterRole.
+   * Appends rules to an existing ClusterRole in a single apply.
    */
-  addRuleToClusterRole(request: AddClusterRoleRuleRequest): Promise<void>;
+  addRulesToClusterRole(request: AddClusterRoleRulesRequest): Promise<void>;
+
+  /**
+   * Starts a discovery pass of the API resources of the current context.
+   *
+   * Returns immediately: the pass can take longer than the RPC timeout, and its result is
+   * pushed on the `API_RESOURCES` channel rather than returned here.
+   */
+  refreshApiResources(): Promise<void>;
 
   generateKubeconfig(request: GenerateKubeconfigRequest): Promise<void>;
 

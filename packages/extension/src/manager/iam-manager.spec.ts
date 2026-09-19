@@ -20,6 +20,7 @@ import { beforeEach, expect, test, vi } from 'vitest';
 import { IamManager } from './iam-manager';
 import { DashboardStatesManager } from './dashboard-states-manager';
 import { DashboardApiManager } from './dashboard-api-manager';
+import { ApiResourcesManager } from './api-resources-manager';
 import type { ExtensionContext, TelemetryLogger } from '@podman-desktop/api';
 import type { RpcExtension } from '@kubernetes-iam/rpc';
 import type { SubjectInfo } from '@kubernetes-iam/channels';
@@ -42,6 +43,8 @@ const mockApi: KubernetesDashboardExtensionApi = {
   patchSubresource: vi.fn(),
   deleteResource: vi.fn(),
   getSubscriber: vi.fn(),
+  getApiVersions: vi.fn(),
+  getApiResources: vi.fn(),
   contexts: { connect: vi.fn() } as unknown as typeof contexts,
 };
 
@@ -197,6 +200,21 @@ test('deleteClusterRoleBinding logs telemetry', async () => {
 test('refreshRbacData logs telemetry', async () => {
   await manager.refreshRbacData();
   expect(telemetryLoggerMock.logUsage).toHaveBeenCalledWith('refreshRbacData');
+});
+
+test('refreshApiResources starts discovery without waiting for it', async () => {
+  const apiResourcesManager = container.get(ApiResourcesManager);
+  let resolveRefresh!: () => void;
+  vi.spyOn(apiResourcesManager, 'refresh').mockReturnValue(
+    new Promise(resolve => {
+      resolveRefresh = resolve;
+    }),
+  );
+
+  await expect(manager.refreshApiResources()).resolves.toBeUndefined();
+  expect(telemetryLoggerMock.logUsage).toHaveBeenCalledWith('refreshApiResources');
+  expect(apiResourcesManager.refresh).toHaveBeenCalledOnce();
+  resolveRefresh();
 });
 
 test('createClusterRoleBinding applies the binding with server-side apply', async () => {
@@ -442,7 +460,7 @@ test('createClusterRoleForUser trims the names before applying them', async () =
   expect(binding.subjects).toEqual([{ apiGroup: 'rbac.authorization.k8s.io', kind: 'User', name: 'alice' }]);
 });
 
-test('addRuleToRole appends the rule to the rules the role already holds', async () => {
+test('addRulesToRole appends the rule to the rules the role already holds', async () => {
   container.get(DashboardStatesManager).setRoles({
     roles: [
       {
@@ -453,13 +471,13 @@ test('addRuleToRole appends the rule to the rules the role already holds', async
     ],
   });
 
-  await manager.addRuleToRole({
+  await manager.addRulesToRole({
     namespace: 'default',
     name: 'pod-reader',
-    rule: { apiGroups: ['apps'], resources: ['deployments'], verbs: ['list', 'watch'] },
+    rules: [{ apiGroups: ['apps'], resources: ['deployments'], verbs: ['list', 'watch'] }],
   });
 
-  expect(telemetryLoggerMock.logUsage).toHaveBeenCalledWith('addRuleToRole');
+  expect(telemetryLoggerMock.logUsage).toHaveBeenCalledWith('addRulesToRole');
   expect(appliedManifest()).toEqual({
     apiVersion: 'rbac.authorization.k8s.io/v1',
     kind: 'Role',
@@ -471,13 +489,31 @@ test('addRuleToRole appends the rule to the rules the role already holds', async
   });
 });
 
-test('addRuleToRole keeps the resource names of the rule', async () => {
+test('addRulesToRole appends several rules in a single apply', async () => {
   container.get(DashboardStatesManager).setRoles({ roles: [{ namespace: 'default', name: 'pod-reader', rules: [] }] });
 
-  await manager.addRuleToRole({
+  await manager.addRulesToRole({
     namespace: 'default',
     name: 'pod-reader',
-    rule: { apiGroups: [''], resources: ['pods'], verbs: ['get'], resourceNames: ['my-pod'] },
+    rules: [
+      { apiGroups: [''], resources: ['pods'], verbs: ['get'] },
+      { apiGroups: ['apps'], resources: ['deployments'], verbs: ['list'] },
+    ],
+  });
+
+  expect(appliedManifest().rules).toEqual([
+    { apiGroups: [''], resources: ['pods'], verbs: ['get'] },
+    { apiGroups: ['apps'], resources: ['deployments'], verbs: ['list'] },
+  ]);
+});
+
+test('addRulesToRole keeps the resource names of the rule', async () => {
+  container.get(DashboardStatesManager).setRoles({ roles: [{ namespace: 'default', name: 'pod-reader', rules: [] }] });
+
+  await manager.addRulesToRole({
+    namespace: 'default',
+    name: 'pod-reader',
+    rules: [{ apiGroups: [''], resources: ['pods'], verbs: ['get'], resourceNames: ['my-pod'] }],
   });
 
   expect(appliedManifest().rules).toEqual([
@@ -485,25 +521,25 @@ test('addRuleToRole keeps the resource names of the rule', async () => {
   ]);
 });
 
-test('addRuleToRole drops the blanks of the rule, but keeps the core API group', async () => {
+test('addRulesToRole drops the blanks of the rule, but keeps the core API group', async () => {
   container.get(DashboardStatesManager).setRoles({ roles: [{ namespace: 'default', name: 'pod-reader', rules: [] }] });
 
-  await manager.addRuleToRole({
+  await manager.addRulesToRole({
     namespace: 'default',
     name: 'pod-reader',
-    rule: { apiGroups: [''], resources: [' pods ', ''], verbs: ['get', '  '], resourceNames: [''] },
+    rules: [{ apiGroups: [''], resources: [' pods ', ''], verbs: ['get', '  '], resourceNames: [''] }],
   });
 
   expect(appliedManifest().rules).toEqual([{ apiGroups: [''], resources: ['pods'], verbs: ['get'] }]);
 });
 
-test('addRuleToRole defaults an empty list of API groups to the core group', async () => {
+test('addRulesToRole defaults an empty list of API groups to the core group', async () => {
   container.get(DashboardStatesManager).setRoles({ roles: [{ namespace: 'default', name: 'pod-reader', rules: [] }] });
 
-  await manager.addRuleToRole({
+  await manager.addRulesToRole({
     namespace: 'default',
     name: 'pod-reader',
-    rule: { apiGroups: [], resources: ['pods'], verbs: ['get'] },
+    rules: [{ apiGroups: [], resources: ['pods'], verbs: ['get'] }],
   });
 
   expect(appliedManifest().rules).toEqual([{ apiGroups: [''], resources: ['pods'], verbs: ['get'] }]);
@@ -512,47 +548,89 @@ test('addRuleToRole defaults an empty list of API groups to the core group', asy
 test.each([
   { field: 'resource', rule: { apiGroups: [''], resources: [], verbs: ['get'] }, error: 'at least one resource' },
   { field: 'verb', rule: { apiGroups: [''], resources: ['pods'], verbs: [] }, error: 'at least one verb' },
-])('addRuleToRole rejects a rule without any $field', async ({ rule, error }) => {
+])('addRulesToRole rejects a rule without any $field', async ({ rule, error }) => {
   container.get(DashboardStatesManager).setRoles({ roles: [{ namespace: 'default', name: 'pod-reader', rules: [] }] });
 
-  await expect(manager.addRuleToRole({ namespace: 'default', name: 'pod-reader', rule })).rejects.toThrow(error);
+  await expect(manager.addRulesToRole({ namespace: 'default', name: 'pod-reader', rules: [rule] })).rejects.toThrow(
+    error,
+  );
   expect(mockApi.patchResources).not.toHaveBeenCalled();
 });
 
-test('addRuleToRole rejects a role it does not know about', async () => {
+test('addRulesToRole rejects an empty list of rules', async () => {
+  container.get(DashboardStatesManager).setRoles({ roles: [{ namespace: 'default', name: 'pod-reader', rules: [] }] });
+
+  await expect(manager.addRulesToRole({ namespace: 'default', name: 'pod-reader', rules: [] })).rejects.toThrow(
+    'At least one rule is needed',
+  );
+  expect(mockApi.patchResources).not.toHaveBeenCalled();
+});
+
+test('addRulesToRole skips an apply when the role already holds the rule', async () => {
+  const existing = { apiGroups: [''], resources: ['pods'], verbs: ['get'] };
+  container.get(DashboardStatesManager).setRoles({
+    roles: [{ namespace: 'default', name: 'pod-reader', rules: [existing] }],
+  });
+
+  await manager.addRulesToRole({
+    namespace: 'default',
+    name: 'pod-reader',
+    rules: [existing],
+  });
+
+  expect(mockApi.patchResources).not.toHaveBeenCalled();
+});
+
+test('addRulesToRole appends only the rules the role does not already hold', async () => {
+  const existing = { apiGroups: [''], resources: ['pods'], verbs: ['get'] };
+  const added = { apiGroups: ['apps'], resources: ['deployments'], verbs: ['list'] };
+  container.get(DashboardStatesManager).setRoles({
+    roles: [{ namespace: 'default', name: 'pod-reader', rules: [existing] }],
+  });
+
+  await manager.addRulesToRole({
+    namespace: 'default',
+    name: 'pod-reader',
+    rules: [existing, added],
+  });
+
+  expect(appliedManifest().rules).toEqual([existing, added]);
+});
+
+test('addRulesToRole rejects a role it does not know about', async () => {
   await expect(
-    manager.addRuleToRole({
+    manager.addRulesToRole({
       namespace: 'default',
       name: 'pod-reader',
-      rule: { apiGroups: [''], resources: ['pods'], verbs: ['get'] },
+      rules: [{ apiGroups: [''], resources: ['pods'], verbs: ['get'] }],
     }),
   ).rejects.toThrow('No role named pod-reader in namespace default');
   expect(mockApi.patchResources).not.toHaveBeenCalled();
 });
 
-test('addRuleToRole ignores a role of the same name in another namespace', async () => {
+test('addRulesToRole ignores a role of the same name in another namespace', async () => {
   container.get(DashboardStatesManager).setRoles({ roles: [{ namespace: 'other', name: 'pod-reader', rules: [] }] });
 
   await expect(
-    manager.addRuleToRole({
+    manager.addRulesToRole({
       namespace: 'default',
       name: 'pod-reader',
-      rule: { apiGroups: [''], resources: ['pods'], verbs: ['get'] },
+      rules: [{ apiGroups: [''], resources: ['pods'], verbs: ['get'] }],
     }),
   ).rejects.toThrow('No role named pod-reader in namespace default');
 });
 
-test('addRuleToClusterRole appends the rule to the rules the cluster role already holds', async () => {
+test('addRulesToClusterRole appends the rule to the rules the cluster role already holds', async () => {
   container.get(DashboardStatesManager).setClusterRoles({
     clusterRoles: [{ name: 'node-reader', rules: [{ apiGroups: [''], resources: ['nodes'], verbs: ['get'] }] }],
   });
 
-  await manager.addRuleToClusterRole({
+  await manager.addRulesToClusterRole({
     name: 'node-reader',
-    rule: { apiGroups: [''], resources: ['nodes'], verbs: ['list'] },
+    rules: [{ apiGroups: [''], resources: ['nodes'], verbs: ['list'] }],
   });
 
-  expect(telemetryLoggerMock.logUsage).toHaveBeenCalledWith('addRuleToClusterRole');
+  expect(telemetryLoggerMock.logUsage).toHaveBeenCalledWith('addRulesToClusterRole');
   expect(appliedManifest()).toEqual({
     apiVersion: 'rbac.authorization.k8s.io/v1',
     kind: 'ClusterRole',
@@ -564,11 +642,51 @@ test('addRuleToClusterRole appends the rule to the rules the cluster role alread
   });
 });
 
-test('addRuleToClusterRole rejects a cluster role it does not know about', async () => {
+test('addRulesToClusterRole appends several rules in a single apply', async () => {
+  container.get(DashboardStatesManager).setClusterRoles({ clusterRoles: [{ name: 'node-reader', rules: [] }] });
+
+  await manager.addRulesToClusterRole({
+    name: 'node-reader',
+    rules: [
+      { apiGroups: [''], resources: ['nodes'], verbs: ['get'] },
+      { apiGroups: [''], resources: ['nodes'], verbs: ['list'] },
+    ],
+  });
+
+  expect(appliedManifest().rules).toEqual([
+    { apiGroups: [''], resources: ['nodes'], verbs: ['get'] },
+    { apiGroups: [''], resources: ['nodes'], verbs: ['list'] },
+  ]);
+});
+
+test('addRulesToClusterRole rejects an empty list of rules', async () => {
+  container.get(DashboardStatesManager).setClusterRoles({ clusterRoles: [{ name: 'node-reader', rules: [] }] });
+
+  await expect(manager.addRulesToClusterRole({ name: 'node-reader', rules: [] })).rejects.toThrow(
+    'At least one rule is needed',
+  );
+  expect(mockApi.patchResources).not.toHaveBeenCalled();
+});
+
+test('addRulesToClusterRole skips an apply when the cluster role already holds the rule', async () => {
+  const existing = { apiGroups: [''], resources: ['nodes'], verbs: ['get'] };
+  container.get(DashboardStatesManager).setClusterRoles({
+    clusterRoles: [{ name: 'node-reader', rules: [existing] }],
+  });
+
+  await manager.addRulesToClusterRole({
+    name: 'node-reader',
+    rules: [existing],
+  });
+
+  expect(mockApi.patchResources).not.toHaveBeenCalled();
+});
+
+test('addRulesToClusterRole rejects a cluster role it does not know about', async () => {
   await expect(
-    manager.addRuleToClusterRole({
+    manager.addRulesToClusterRole({
       name: 'node-reader',
-      rule: { apiGroups: [''], resources: ['nodes'], verbs: ['get'] },
+      rules: [{ apiGroups: [''], resources: ['nodes'], verbs: ['get'] }],
     }),
   ).rejects.toThrow('No cluster role named node-reader');
   expect(mockApi.patchResources).not.toHaveBeenCalled();

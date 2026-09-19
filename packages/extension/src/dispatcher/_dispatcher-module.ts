@@ -23,6 +23,7 @@ import { RoleBindingsDispatcher } from '/@/dispatcher/role-bindings-dispatcher';
 import { ClusterRolesDispatcher } from '/@/dispatcher/cluster-roles-dispatcher';
 import { ClusterRoleBindingsDispatcher } from '/@/dispatcher/cluster-role-bindings-dispatcher';
 import { UsersDispatcher } from '/@/dispatcher/users-dispatcher';
+import { ApiResourcesDispatcher } from '/@/dispatcher/api-resources-dispatcher';
 
 const dispatchersModule = new ContainerModule(options => {
   options.bind<RolesDispatcher>(RolesDispatcher).toSelf().inSingletonScope();
@@ -39,6 +40,9 @@ const dispatchersModule = new ContainerModule(options => {
 
   options.bind<UsersDispatcher>(UsersDispatcher).toSelf().inSingletonScope();
   options.bind(DispatcherObject).toService(UsersDispatcher);
+
+  options.bind<ApiResourcesDispatcher>(ApiResourcesDispatcher).toSelf().inSingletonScope();
+  options.bind(DispatcherObject).toService(ApiResourcesDispatcher);
 });
 
 export { dispatchersModule };

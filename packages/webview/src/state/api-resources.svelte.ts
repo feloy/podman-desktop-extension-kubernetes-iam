@@ -16,16 +16,23 @@
  * SPDX-License-Identifier: Apache-2.0
  ***********************************************************************/
 
-import { vi } from 'vitest';
+import { inject, injectable } from 'inversify';
 
-Object.defineProperty(window, 'acquirePodmanDesktopApi', {
-  value: vi.fn(),
-});
+import { API_RESOURCES, type ApiResourcesData } from '@kubernetes-iam/channels';
+import { RpcBrowser } from '@kubernetes-iam/rpc';
 
-// ui-svelte's Expandable uses Svelte transitions, which rely on the Web Animations API.
-// jsdom does not implement it.
-if (!Element.prototype.animate) {
-  Object.defineProperty(Element.prototype, 'animate', {
-    value: () => ({ cancel: vi.fn() }),
-  });
+import { AbsStateObjectImpl, type StateObject } from './util/state-object.svelte';
+
+@injectable()
+export class StateApiResourcesData
+  extends AbsStateObjectImpl<ApiResourcesData, void>
+  implements StateObject<ApiResourcesData, void>
+{
+  constructor(@inject(RpcBrowser) rpcBrowser: RpcBrowser) {
+    super(rpcBrowser);
+  }
+
+  async init(): Promise<void> {
+    await this.initChannel(API_RESOURCES);
+  }
 }
