@@ -37,4 +37,8 @@ export class UserDetailsPage extends DetailsPage {
   getRuleRow(ruleName: string): Locator {
     return this.page.getByRole('row', { name: ruleName, exact: true });
   }
+
+  getRevokeRoleButton(roleName: string): Locator {
+    return this.page.getByTitle(`Revoke ${roleName}`);
+  }
 }

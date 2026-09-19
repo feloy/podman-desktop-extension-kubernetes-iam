@@ -36,6 +36,13 @@ export class UsersPage extends MainPage {
     return this.page.getByRole('button', { name: userName, exact: true });
   }
 
+  getDownloadKubeconfigButton(userName: string): Locator {
+    return this.page
+      .getByRole('row')
+      .filter({ has: this.getUserButton(userName) })
+      .getByTitle('Download Kubeconfig');
+  }
+
   async openUser(userName: string): Promise<UserDetailsPage> {
     await this.getUserButton(userName).click();
     return new UserDetailsPage(this.page, userName);
