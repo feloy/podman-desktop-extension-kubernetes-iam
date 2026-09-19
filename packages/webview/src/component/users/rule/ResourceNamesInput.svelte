@@ -1,5 +1,5 @@
 <script lang="ts">
-import { Input } from '@podman-desktop/ui-svelte';
+import { Expandable, Input } from '@podman-desktop/ui-svelte';
 
 /** Kubernetes ignores resourceNames for these and grants them namespace-wide instead. */
 const COLLECTION_VERBS = ['list', 'watch', 'create', 'deletecollection'];
@@ -13,8 +13,6 @@ interface Props {
 const { names, onChange, verbs }: Props = $props();
 
 let draft = $state('');
-let expanded = $state(false);
-
 const showCaveat = $derived(names.length > 0 && verbs.some(verb => COLLECTION_VERBS.includes(verb)));
 
 function addName(): void {
@@ -35,18 +33,14 @@ function onKeypress(event: KeyboardEvent): void {
 </script>
 
 <div class="flex flex-col gap-2">
-  <button
-    type="button"
-    class="flex flex-row items-center gap-1 text-sm font-medium text-(--pd-modal-text)"
-    aria-expanded={expanded}
-    onclick={(): void => {
-      expanded = !expanded;
-    }}>
-    Restrict to named resources
-  </button>
-  {#if expanded}
+  <Expandable expanded={false}>
+    {#snippet title()}
+      <span class="text-sm font-medium text-(--pd-modal-text)">Restrict to named resources</span>
+    {/snippet}
+
     <div class="flex flex-col gap-2">
-      <Input aria-label="Resource names" placeholder="e.g. my-pod" bind:value={draft} onkeypress={onKeypress} />
+      <Input aria-label="Resource names" placeholder="e.g. pod-a, pod-b" bind:value={draft} onkeypress={onKeypress} />
+      <p class="text-xs text-(--pd-input-field-placeholder-text)">Press Enter or comma to add each name below.</p>
       {#if names.length > 0}
         <div class="flex flex-row flex-wrap gap-2">
           {#each names as name (name)}
@@ -71,5 +65,5 @@ function onKeypress(event: KeyboardEvent): void {
         </p>
       {/if}
     </div>
-  {/if}
+  </Expandable>
 </div>

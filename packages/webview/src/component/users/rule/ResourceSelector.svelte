@@ -1,5 +1,14 @@
+<style>
+/* Keep the group menu inside the dialog while retaining its normal downward placement. */
+:global(.api-group-dropdown > div.absolute) {
+  top: 100%;
+  bottom: auto;
+  max-height: 12rem;
+}
+</style>
+
 <script lang="ts">
-import { Checkbox, Dropdown, SearchInput } from '@podman-desktop/ui-svelte';
+import { Checkbox, Dropdown, Expandable, SearchInput } from '@podman-desktop/ui-svelte';
 import { filterResources, type SelectableResource } from './rule-builder';
 
 /** Sentinel for the group dropdown: not a Kubernetes API group, so it cannot collide. */
@@ -40,28 +49,40 @@ const visible = $derived(
 </script>
 
 <div class="flex flex-col gap-2">
-  <p class="text-sm font-medium text-(--pd-modal-text)">Resources</p>
-  <SearchInput title="resources" bind:searchTerm={search} />
-  <div class="flex flex-row items-center gap-4">
-    <Dropdown class="grow" ariaLabel="API group" options={groupOptions} bind:value={groupValue} />
-    <Checkbox bind:checked={includeSubresources}>show subresources</Checkbox>
-  </div>
-  <div class="max-h-48 overflow-y-auto rounded border border-(--pd-input-field-stroke)">
-    {#if visible.length === 0}
-      <p class="px-3 py-2 text-sm text-(--pd-input-field-placeholder-text)">No resources match the filter.</p>
-    {:else}
-      {#each visible as resource (resource.key)}
-        <Checkbox
-          class="w-full px-1"
-          title={resource.resource}
-          checked={selected.includes(resource.key)}
-          onclick={(): void => onToggle(resource.key)}>
-          <span class="flex w-full flex-row items-center justify-between gap-4 py-0.5 text-sm text-(--pd-modal-text)">
-            <span>{resource.resource}</span>
-            <span class="text-(--pd-input-field-placeholder-text)">{resource.groupLabel}</span>
-          </span>
-        </Checkbox>
-      {/each}
-    {/if}
-  </div>
+  <Expandable expanded={true}>
+    {#snippet title()}
+      <span class="text-sm font-medium text-(--pd-modal-text)">Resources selection</span>
+    {/snippet}
+
+    <div class="flex flex-col gap-2">
+      <SearchInput title="resources" bind:searchTerm={search} />
+      <div class="flex flex-row items-center gap-4">
+        <Dropdown
+          class="api-group-dropdown grow"
+          ariaLabel="API group"
+          options={groupOptions}
+          bind:value={groupValue} />
+        <Checkbox bind:checked={includeSubresources}>show subresources</Checkbox>
+      </div>
+      <div class="max-h-48 overflow-y-auto rounded border border-(--pd-input-field-stroke)">
+        {#if visible.length === 0}
+          <p class="px-3 py-2 text-sm text-(--pd-input-field-placeholder-text)">No resources match the filter.</p>
+        {:else}
+          {#each visible as resource (resource.key)}
+            <Checkbox
+              class="w-full px-1"
+              title={resource.resource}
+              checked={selected.includes(resource.key)}
+              onclick={(): void => onToggle(resource.key)}>
+              <span
+                class="flex w-full flex-row items-center justify-between gap-4 py-0.5 text-sm text-(--pd-modal-text)">
+                <span>{resource.resource}</span>
+                <span class="text-(--pd-input-field-placeholder-text)">{resource.groupLabel}</span>
+              </span>
+            </Checkbox>
+          {/each}
+        {/if}
+      </div>
+    </div>
+  </Expandable>
 </div>
