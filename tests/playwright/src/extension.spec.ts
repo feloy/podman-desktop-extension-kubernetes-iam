@@ -34,7 +34,7 @@ import {
 import { KubernetesIamDetailsPage } from './model/pages/iam-details-page';
 import type { UserDetailsPage } from './model/pages/user-details-page';
 import { UsersPage } from './model/pages/users-page';
-import { enableSlowTyping } from './utils/slow-typing';
+import { configureVideoCaptions, recordedStep } from './utils/video-captions';
 import { handleWebview } from './utils/webviewHandler';
 
 const DASHBOARD_OCI_IMAGE =
@@ -55,10 +55,6 @@ const E2E_ROLE_NAMESPACE: string = 'default';
 const E2E_SECOND_ROLE_NAMESPACE: string = 'kube-system';
 const USER1_CLUSTER_ROLE_BINDING_NAME: string = 'user1-cluster-admin';
 const USER1_SECOND_CLUSTER_ROLE_BINDING_NAME: string = 'user1-cluster-admin-second';
-const CAPTION_PACE_MS = Number(process.env.CAPTION_PACE_MS) || 0;
-const CAPTION_TYPING_DURATION_MS = Number(process.env.CAPTION_TYPING_DURATION_MS) || 0;
-const CAPTION_TIMEOUT_BUFFER_MS = 120_000;
-const ACTION_STEP_PREFIX = '[video-caption] ';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -191,18 +187,6 @@ function createClusterRoleBindingForUser(
   );
 }
 
-async function recordedStep<T>(caption: string, action: () => Promise<T>): Promise<T> {
-  const result = await test.step(`${ACTION_STEP_PREFIX}${caption}`, action);
-  await pauseForCaption();
-  return result;
-}
-
-async function pauseForCaption(): Promise<void> {
-  if (CAPTION_PACE_MS > 0) {
-    await new Promise(resolve => setTimeout(resolve, CAPTION_PACE_MS));
-  }
-}
-
 test.use({
   runnerOptions: new RunnerOptions({
     customFolder: 'kubernetes-iam-tests',
@@ -223,13 +207,8 @@ test.use({
   }),
 });
 
-// Captions deliberately pause after annotated, confirmed UI outcomes.
-// Reserve that presentation time only for the subtitled recording mode.
 test.beforeEach(async ({ page }, testInfo) => {
-  enableSlowTyping(page, CAPTION_TYPING_DURATION_MS);
-  if (CAPTION_PACE_MS > 0) {
-    testInfo.setTimeout(testInfo.timeout + CAPTION_TIMEOUT_BUFFER_MS);
-  }
+  configureVideoCaptions(page, testInfo);
 });
 
 test.beforeAll(async ({ runner, welcomePage }) => {
