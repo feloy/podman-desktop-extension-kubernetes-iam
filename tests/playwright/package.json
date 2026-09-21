@@ -3,7 +3,8 @@
   "version": "0.1.0-next",
   "description": "Kubernetes IAM extension Playwright E2E tests",
   "scripts": {
-    "test:e2e:integration": "bash ./scripts/run-integration.sh"
+    "test:e2e:integration": "bash ./scripts/run-integration.sh",
+    "test:e2e:integration:subtitled": "bash ./scripts/run-integration.sh --subtitles --caption-pace-ms 5000 --typing-delay-ms 333"
   },
   "publisher": "podman-desktop",
   "license": "Apache-2.0",

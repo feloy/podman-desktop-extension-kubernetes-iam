@@ -26,6 +26,7 @@
     "test:channels": "vitest run --project channels --passWithNoTests",
     "test": "pnpm run test:extension && pnpm run test:webview && pnpm run test:channels",
     "test:e2e:integration": "cd tests/playwright && npm run test:e2e:integration",
+    "test:e2e:integration:subtitled": "cd tests/playwright && npm run test:e2e:integration:subtitled",
     "typecheck:rpc": "tsc --noEmit --project packages/rpc",
     "typecheck:channels": "tsc --noEmit --project packages/channels",
     "typecheck:webview": "cd packages/webview && pnpm check",
