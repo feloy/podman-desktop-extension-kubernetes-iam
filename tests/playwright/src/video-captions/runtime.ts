@@ -16,6 +16,8 @@
  * SPDX-License-Identifier: Apache-2.0
  ***********************************************************************/
 
+import { AsyncLocalStorage } from 'node:async_hooks';
+
 import type { Locator, Page, TestInfo } from '@playwright/test';
 
 import { test } from '@podman-desktop/tests-playwright';
@@ -30,6 +32,7 @@ const ACTION_STEP_PREFIX = '[video-caption] ';
 type LocatorPrototype = Pick<Locator, 'check' | 'click' | 'fill' | 'uncheck'>;
 
 let automaticActionCaptionsInstalled = false;
+const recordedStepScope = new AsyncLocalStorage<boolean>();
 
 /**
  * Records a viewer-facing caption after a UI outcome has been verified.
@@ -37,14 +40,14 @@ let automaticActionCaptionsInstalled = false;
  * rather than annotate individual UI interactions.
  */
 export async function recordedStep<T>(caption: string, action: () => Promise<T>): Promise<T> {
-  const result = await test.step(`${ACTION_STEP_PREFIX}${caption}`, action);
+  const result = await test.step(`${ACTION_STEP_PREFIX}${caption}`, () => recordedStepScope.run(true, action));
   await pauseForCaption();
   return result;
 }
 
 /** Configures transparent caption pacing and fixed-duration typing for an e2e test. */
 export function configureVideoCaptions(page: Page, testInfo: TestInfo): void {
-  enableSlowTyping(page, CAPTION_TYPING_DURATION_MS);
+  enableSlowTyping(page, CAPTION_TYPING_DURATION_MS, isInsideRecordedStep);
   if (CAPTION_PACE_MS > 0) {
     enableAutomaticActionCaptions(page);
     testInfo.setTimeout(testInfo.timeout + CAPTION_TIMEOUT_BUFFER_MS);
@@ -68,18 +71,34 @@ function enableAutomaticActionCaptions(page: Page): void {
   const originalFill = prototype.fill;
 
   prototype.click = async function (this: Locator, options): Promise<void> {
+    if (!isInsideRecordedStep()) {
+      return originalClick.call(this, options);
+    }
     await recordedStep(`Click ${await controlLabel(this)}`, () => originalClick.call(this, options));
   };
   prototype.check = async function (this: Locator, options): Promise<void> {
+    if (!isInsideRecordedStep()) {
+      return originalCheck.call(this, options);
+    }
     await recordedStep(`Select ${await controlLabel(this)}`, () => originalCheck.call(this, options));
   };
   prototype.uncheck = async function (this: Locator, options): Promise<void> {
+    if (!isInsideRecordedStep()) {
+      return originalUncheck.call(this, options);
+    }
     await recordedStep(`Clear ${await controlLabel(this)}`, () => originalUncheck.call(this, options));
   };
   prototype.fill = async function (this: Locator, value: string, options): Promise<void> {
+    if (!isInsideRecordedStep()) {
+      return originalFill.call(this, value, options);
+    }
     await recordedStep(`Enter text in ${await controlLabel(this)}`, () => originalFill.call(this, value, options));
   };
   automaticActionCaptionsInstalled = true;
+}
+
+function isInsideRecordedStep(): boolean {
+  return recordedStepScope.getStore() === true;
 }
 
 async function controlLabel(locator: Locator): Promise<string> {

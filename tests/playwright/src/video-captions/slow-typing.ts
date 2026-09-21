@@ -30,7 +30,7 @@ let installed = false;
  * This is installed from a fixture hook, so test authors continue using the
  * regular Locator.fill API.
  */
-export function enableSlowTyping(page: Page, duration: number): void {
+export function enableSlowTyping(page: Page, duration: number, shouldTypeSlowly: () => boolean): void {
   if (installed || duration <= 0) {
     return;
   }
@@ -38,7 +38,7 @@ export function enableSlowTyping(page: Page, duration: number): void {
   const prototype = Object.getPrototypeOf(page.locator('body')) as LocatorPrototype;
   const originalFill = prototype.fill;
   prototype.fill = async function (this: Locator, value: string, options): Promise<void> {
-    if (value.length === 0) {
+    if (value.length === 0 || !shouldTypeSlowly()) {
       await originalFill.call(this, value, options);
       return;
     }
