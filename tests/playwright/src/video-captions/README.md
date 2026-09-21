@@ -36,11 +36,11 @@ test.beforeEach(({ page }, testInfo) => {
 
 The recording script must export these variables for the test process:
 
-| Variable | Purpose |
-| --- | --- |
-| `VIDEO_SUBTITLES=true` | Enables the reporter. |
-| `CAPTION_PACE_MS` | Pause after each emitted caption. Set to `0` for no pacing. |
-| `CAPTION_TYPING_DURATION_MS` | Total duration for each non-empty `.fill()` call. Set to `0` for normal fills. |
+| Variable                     | Purpose                                                                                                |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `VIDEO_SUBTITLES=true`       | Enables the reporter.                                                                                  |
+| `CAPTION_PACE_MS`            | Pause after each emitted caption. Set to `0` for no pacing.                                            |
+| `CAPTION_TYPING_DURATION_MS` | Total duration for each non-empty `.fill()` call. Set to `0` for normal fills.                         |
 | `VIDEO_RECORDING_STARTED_AT` | Epoch milliseconds captured immediately before recording begins, used to align subtitles and chapters. |
 
 ## Test authoring
@@ -62,7 +62,10 @@ await recordedStep('Create the administrator user', async () => {
   await page.getByRole('button', { name: 'Create user' }).click();
   await page.getByRole('textbox', { name: 'User name' }).fill('admin');
   await page.getByRole('button', { name: 'Create', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'admin', exact: true })).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: 'admin', exact: true }),
+    'The newly created administrator user is listed',
+  ).toBeVisible();
 });
 ```
 
@@ -71,6 +74,12 @@ already visible. Verified outcome captions are green; automatically captioned
 interactions within the outcome are yellow. Avoid wrapping individual
 interactions in `recordedStep`: they are captioned automatically within the
 meaningful business outcome.
+
+Import `expect` from this framework instead of the underlying fixture package.
+Inside a `recordedStep`, a custom expectation message is a final green caption
+and automatically receives the configured pacing. Unnamed expectations remain
+ordinary test checks; if no named expectation is used, the business-step name
+is shown instead.
 
 ## Chapters
 

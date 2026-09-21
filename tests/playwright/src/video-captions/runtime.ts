@@ -20,7 +20,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 
 import type { Locator, Page, TestInfo } from '@playwright/test';
 
-import { test } from '@podman-desktop/tests-playwright';
+import { expect as playwrightExpect, test } from '@podman-desktop/tests-playwright';
 
 import { enableSlowTyping } from './slow-typing';
 
@@ -29,20 +29,41 @@ const CAPTION_TYPING_DURATION_MS = Number(process.env.CAPTION_TYPING_DURATION_MS
 const CAPTION_TIMEOUT_BUFFER_MS = 120_000;
 const OUTCOME_STEP_PREFIX = '[video-caption] ';
 const ACTION_STEP_PREFIX = '[video-action] ';
+const RECORDED_STEP_PREFIX = '[video-recorded-step] ';
 
 type LocatorPrototype = Pick<Locator, 'check' | 'click' | 'fill' | 'uncheck'>;
+type RecordedStepScope = { hasNamedExpectationCaption: boolean };
 
 let automaticActionCaptionsInstalled = false;
-const recordedStepScope = new AsyncLocalStorage<boolean>();
+const recordedStepScope = new AsyncLocalStorage<RecordedStepScope>();
 
 /**
- * Records a viewer-facing caption after a UI outcome has been verified.
- * Test code should keep each recorded step at the business-outcome level,
- * rather than annotate individual UI interactions.
+ * Playwright's `expect`, with an opt-in viewer-facing caption for a custom
+ * expectation message inside a recorded step. The assertion keeps Playwright's
+ * native failure message and pauses only after it has succeeded.
+ */
+export const expect = new Proxy(playwrightExpect, {
+  apply(target, thisArgument, argumentsList: unknown[]): unknown {
+    const expectation = Reflect.apply(target, thisArgument, argumentsList);
+    const [, message] = argumentsList;
+    if (typeof message !== 'string' || !recordedStepScope.getStore()) {
+      return expectation;
+    }
+    return captionedExpectation(expectation as object, message);
+  },
+}) as typeof playwrightExpect;
+
+/**
+ * Groups a meaningful, verified business outcome. A custom message passed to
+ * an `expect` in this callback becomes the final viewer-facing caption.
  */
 export async function recordedStep<T>(caption: string, action: () => Promise<T>): Promise<T> {
-  const result = await test.step(`${OUTCOME_STEP_PREFIX}${caption}`, () => recordedStepScope.run(true, action));
-  await pauseForCaption();
+  const scope: RecordedStepScope = { hasNamedExpectationCaption: false };
+  const result = await test.step(`${RECORDED_STEP_PREFIX}${caption}`, () => recordedStepScope.run(scope, action));
+  if (!scope.hasNamedExpectationCaption) {
+    await test.step(`${OUTCOME_STEP_PREFIX}${caption}`, async () => undefined);
+    await pauseForCaption();
+  }
   return result;
 }
 
@@ -99,7 +120,35 @@ function enableAutomaticActionCaptions(page: Page): void {
 }
 
 function isInsideRecordedStep(): boolean {
-  return recordedStepScope.getStore() === true;
+  return recordedStepScope.getStore() !== undefined;
+}
+
+function captionedExpectation(expectation: object, message: string): object {
+  return new Proxy(expectation, {
+    get(target, property, receiver): unknown {
+      const value = Reflect.get(target, property, receiver);
+      if (typeof value === 'function') {
+        return (...argumentsList: unknown[]): Promise<unknown> =>
+          captionedMatcher(target, value as (...parameters: unknown[]) => unknown, argumentsList, message);
+      }
+      return typeof value === 'object' && value ? captionedExpectation(value, message) : value;
+    },
+  });
+}
+
+async function captionedMatcher(
+  target: object,
+  matcher: (...argumentsList: unknown[]) => unknown,
+  argumentsList: unknown[],
+  message: string,
+): Promise<unknown> {
+  const scope = recordedStepScope.getStore();
+  if (scope) {
+    scope.hasNamedExpectationCaption = true;
+  }
+  const result = await test.step(`${OUTCOME_STEP_PREFIX}${message}`, () => matcher.apply(target, argumentsList));
+  await pauseForCaption();
+  return result;
 }
 
 async function recordedAction<T>(caption: string, action: () => Promise<T>): Promise<T> {

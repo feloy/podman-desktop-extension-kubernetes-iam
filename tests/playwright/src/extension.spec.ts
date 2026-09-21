@@ -23,18 +23,12 @@ import { fileURLToPath } from 'node:url';
 
 import type { Page } from '@playwright/test';
 import type { ExtensionsPage } from '@podman-desktop/tests-playwright';
-import {
-  expect as playExpect,
-  PreferencesPage,
-  RunnerOptions,
-  StatusBar,
-  test,
-} from '@podman-desktop/tests-playwright';
+import { PreferencesPage, RunnerOptions, StatusBar, test } from '@podman-desktop/tests-playwright';
 
 import { KubernetesIamDetailsPage } from './model/pages/iam-details-page';
 import type { UserDetailsPage } from './model/pages/user-details-page';
 import { UsersPage } from './model/pages/users-page';
-import { configureVideoCaptions, recordedStep } from './video-captions/runtime';
+import { configureVideoCaptions, expect as playExpect, recordedStep } from './video-captions/runtime';
 import { handleWebview } from './utils/webviewHandler';
 
 const DASHBOARD_OCI_IMAGE =
@@ -311,7 +305,9 @@ test.describe.serial(`Extension usage`, { tag: '@integration' }, () => {
         const usersPage = new UsersPage(webview);
         await playExpect(usersPage.heading).toBeVisible({ timeout: 30_000 });
         await playExpect(usersPage.createUserButton).toBeVisible();
-        await playExpect(usersPage.getUserButton('user1')).toBeVisible({ timeout: 60_000 });
+        await playExpect(usersPage.getUserButton('user1'), 'The seeded user is listed').toBeVisible({
+          timeout: 60_000,
+        });
       });
     });
 
@@ -337,7 +333,7 @@ test.describe.serial(`Extension usage`, { tag: '@integration' }, () => {
         const confirmation = mainPage.getByRole('dialog');
         await playExpect(confirmation).toBeVisible();
         await confirmation.getByRole('button', { name: 'Cancel', exact: true }).click();
-        await playExpect(roleRow).toBeVisible();
+        await playExpect(roleRow, 'user1 has the cluster-admin role').toBeVisible();
       });
       playExpect(
         kubernetesResourceExists(ENVTEST_KUBECONFIG, 'clusterrolebinding', USER1_CLUSTER_ROLE_BINDING_NAME),
@@ -356,13 +352,18 @@ test.describe.serial(`Extension usage`, { tag: '@integration' }, () => {
         await dialog.getByRole('textbox', { name: 'User name' }).fill(E2E_USER_NAME);
         await dialog.getByRole('button', { name: 'Create', exact: true }).click();
         await playExpect(dialog).not.toBeVisible();
-        await playExpect(usersPage.getUserButton(E2E_USER_NAME)).toBeVisible({ timeout: 30_000 });
+        await playExpect(usersPage.getUserButton(E2E_USER_NAME), 'The newly created user is listed').toBeVisible({
+          timeout: 30_000,
+        });
       });
       await recordedStep('Reject duplicate e2e-user creation', async () => {
         await usersPage.createUserButton.click();
         await playExpect(dialog).toBeVisible();
         await dialog.getByRole('textbox', { name: 'User name' }).fill(E2E_USER_NAME);
-        await playExpect(dialog.getByText(`A user named ${E2E_USER_NAME} already exists.`)).toBeVisible();
+        await playExpect(
+          dialog.getByText(`A user named ${E2E_USER_NAME} already exists.`),
+          'Duplicate user creation is rejected with an explanatory message',
+        ).toBeVisible();
         await playExpect(dialog.getByRole('button', { name: 'Create', exact: true })).toBeDisabled();
       });
       await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
@@ -425,7 +426,12 @@ test.describe.serial(`Extension usage`, { tag: '@integration' }, () => {
       const usersPage = new UsersPage(webview);
       const e2eUserDetails = await usersPage.openUser(E2E_USER_NAME);
       await recordedStep('Verify cluster-admin is granted to e2e-user', () =>
-        playExpect(e2eUserDetails.getRoleRow('cluster-admin')).toBeVisible({ timeout: 30_000 }),
+        playExpect(
+          e2eUserDetails.getRoleRow('cluster-admin'),
+          'e2e-user is granted the cluster-admin role',
+        ).toBeVisible({
+          timeout: 30_000,
+        }),
       );
       await e2eUserDetails.closeButton.click();
       await playExpect(usersPage.heading).toBeVisible();
@@ -438,7 +444,10 @@ test.describe.serial(`Extension usage`, { tag: '@integration' }, () => {
         await playExpect(confirmation).toContainText(/Revoke ClusterRole cluster-admin \([^)]*\) from user1/);
         await playExpect(confirmation.getByRole('button', { name: 'Delete', exact: true })).not.toBeVisible();
         await confirmation.getByRole('button', { name: 'Revoke', exact: true }).click();
-        await playExpect(user1Details.getRoleRow('cluster-admin')).not.toBeVisible({ timeout: 30_000 });
+        await playExpect(
+          user1Details.getRoleRow('cluster-admin'),
+          'cluster-admin is no longer listed for user1',
+        ).not.toBeVisible({ timeout: 30_000 });
       });
       const binding = getKubernetesResource(ENVTEST_KUBECONFIG, 'clusterrolebinding', USER1_CLUSTER_ROLE_BINDING_NAME);
       playExpect(binding).toMatchObject({ subjects: [{ kind: 'User', name: E2E_USER_NAME }] });
@@ -468,7 +477,10 @@ test.describe.serial(`Extension usage`, { tag: '@integration' }, () => {
         await playExpect(confirmation).toContainText(`ClusterRoleBinding ${USER1_SECOND_CLUSTER_ROLE_BINDING_NAME}`);
         await playExpect(confirmation.getByRole('button', { name: 'Delete', exact: true })).not.toBeVisible();
         await confirmation.getByRole('button', { name: 'Revoke', exact: true }).click();
-        await playExpect(user1Details.getRoleRow('cluster-admin')).not.toBeVisible({ timeout: 30_000 });
+        await playExpect(
+          user1Details.getRoleRow('cluster-admin'),
+          'The remaining cluster-admin binding is revoked from user1',
+        ).not.toBeVisible({ timeout: 30_000 });
       });
       playExpect(
         kubernetesResourceExists(ENVTEST_KUBECONFIG, 'clusterrolebinding', USER1_SECOND_CLUSTER_ROLE_BINDING_NAME),
@@ -498,7 +510,9 @@ test.describe.serial(`Extension usage`, { tag: '@integration' }, () => {
         await roleDialog.getByRole('textbox', { name: 'Namespace' }).fill(E2E_ROLE_NAMESPACE);
         await roleDialog.getByRole('button', { name: 'Create', exact: true }).click();
         await playExpect(roleDialog).not.toBeVisible();
-        await playExpect(details.getRoleRow(E2E_ROLE_NAME)).toBeVisible({ timeout: 30_000 });
+        await playExpect(details.getRoleRow(E2E_ROLE_NAME), 'The namespaced role is created').toBeVisible({
+          timeout: 30_000,
+        });
       });
       await recordedStep('Create cluster-scoped role for e2e-user', async () => {
         await details.addClusterRoleButton.click();
@@ -506,7 +520,9 @@ test.describe.serial(`Extension usage`, { tag: '@integration' }, () => {
         await clusterRoleDialog.getByRole('textbox', { name: 'Role name' }).fill(E2E_CLUSTER_ROLE_NAME);
         await clusterRoleDialog.getByRole('button', { name: 'Create', exact: true }).click();
         await playExpect(clusterRoleDialog).not.toBeVisible();
-        await playExpect(details.getRoleRow(E2E_CLUSTER_ROLE_NAME)).toBeVisible({ timeout: 30_000 });
+        await playExpect(details.getRoleRow(E2E_CLUSTER_ROLE_NAME), 'The cluster-scoped role is created').toBeVisible({
+          timeout: 30_000,
+        });
       });
 
       playExpect(
@@ -545,6 +561,7 @@ test.describe.serial(`Extension usage`, { tag: '@integration' }, () => {
           dialog.getByText(
             `A role or role binding named ${E2E_ROLE_NAME} already exists in namespace ${E2E_ROLE_NAMESPACE}`,
           ),
+          'Duplicate role creation is rejected with an explanatory message',
         ).toBeVisible();
       });
       playExpect(kubernetesResourceExists(ENVTEST_KUBECONFIG, 'role', E2E_ROLE_NAME, E2E_ROLE_NAMESPACE)).toBeTruthy();
@@ -576,7 +593,7 @@ test.describe.serial(`Extension usage`, { tag: '@integration' }, () => {
         await roleDialog.getByRole('checkbox', { name: 'deployments', exact: true }).check();
         await roleDialog.getByRole('radio', { name: 'View', exact: true }).check();
         await roleDialog.getByRole('button', { name: 'Add rules', exact: true }).click();
-        await playExpect(roleDialog).not.toBeVisible();
+        await playExpect(roleDialog, 'The selected API-resource rules are added').not.toBeVisible();
       });
 
       playExpect(
@@ -611,7 +628,7 @@ test.describe.serial(`Extension usage`, { tag: '@integration' }, () => {
         await resourceNames.fill('pod-a');
         await resourceNames.press('Enter');
         await roleDialog.getByRole('button', { name: 'Add rules', exact: true }).click();
-        await playExpect(roleDialog).not.toBeVisible();
+        await playExpect(roleDialog, 'The rule limited to named pods is added').not.toBeVisible();
       });
 
       playExpect(
@@ -638,7 +655,7 @@ test.describe.serial(`Extension usage`, { tag: '@integration' }, () => {
         await roleDialog.getByRole('checkbox', { name: 'pods/log', exact: true }).check();
         await roleDialog.getByRole('checkbox', { name: 'get', exact: true }).check();
         await roleDialog.getByRole('button', { name: 'Add rules', exact: true }).click();
-        await playExpect(roleDialog).not.toBeVisible();
+        await playExpect(roleDialog, 'The pods/log subresource rule is added').not.toBeVisible();
       });
 
       playExpect(
@@ -664,7 +681,7 @@ test.describe.serial(`Extension usage`, { tag: '@integration' }, () => {
         await roleDialog.getByRole('checkbox', { name: 'widgets', exact: true }).check();
         await roleDialog.getByRole('checkbox', { name: 'get', exact: true }).check();
         await roleDialog.getByRole('button', { name: 'Add rules', exact: true }).click();
-        await playExpect(roleDialog).not.toBeVisible();
+        await playExpect(roleDialog, 'The custom resource rule is added').not.toBeVisible();
       });
 
       playExpect(
@@ -690,7 +707,7 @@ test.describe.serial(`Extension usage`, { tag: '@integration' }, () => {
         await clusterRoleDialog.getByRole('checkbox', { name: 'nodes', exact: true }).check();
         await clusterRoleDialog.getByRole('radio', { name: 'View', exact: true }).check();
         await clusterRoleDialog.getByRole('button', { name: 'Add rules', exact: true }).click();
-        await playExpect(clusterRoleDialog).not.toBeVisible();
+        await playExpect(clusterRoleDialog, 'The node rule is added to the cluster-scoped role').not.toBeVisible();
       });
 
       playExpect(
@@ -714,7 +731,10 @@ test.describe.serial(`Extension usage`, { tag: '@integration' }, () => {
         await playExpect(confirmation).toBeVisible();
         await playExpect(confirmation).toContainText(`Revoke Role ${E2E_ROLE_NAME}`);
         await confirmation.getByRole('button', { name: 'Revoke', exact: true }).click();
-        await playExpect(userDetails.getRoleRow(E2E_ROLE_NAME)).not.toBeVisible({ timeout: 30_000 });
+        await playExpect(
+          userDetails.getRoleRow(E2E_ROLE_NAME),
+          'The namespaced role is no longer assigned to e2e-user',
+        ).not.toBeVisible({ timeout: 30_000 });
       });
       playExpect(
         kubernetesResourceExists(ENVTEST_KUBECONFIG, 'rolebinding', E2E_ROLE_NAME, E2E_ROLE_NAMESPACE),
@@ -736,7 +756,7 @@ test.describe.serial(`Extension usage`, { tag: '@integration' }, () => {
         await dialog.getByRole('textbox', { name: 'Role name' }).fill(E2E_ROLE_NAME);
         await dialog.getByRole('textbox', { name: 'Namespace' }).fill(E2E_SECOND_ROLE_NAMESPACE);
         await dialog.getByRole('button', { name: 'Create', exact: true }).click();
-        await playExpect(dialog).not.toBeVisible();
+        await playExpect(dialog, 'A role with the same name is created in the kube-system namespace').not.toBeVisible();
       });
 
       playExpect(
@@ -761,7 +781,10 @@ test.describe.serial(`Extension usage`, { tag: '@integration' }, () => {
         await playExpect(confirmation).toBeVisible();
         await playExpect(confirmation).toContainText(`Revoke ClusterRole ${E2E_CLUSTER_ROLE_NAME}`);
         await confirmation.getByRole('button', { name: 'Delete', exact: true }).click();
-        await playExpect(userDetails.getRoleRow(E2E_CLUSTER_ROLE_NAME)).not.toBeVisible({ timeout: 30_000 });
+        await playExpect(
+          userDetails.getRoleRow(E2E_CLUSTER_ROLE_NAME),
+          'The cluster-scoped role is removed from e2e-user',
+        ).not.toBeVisible({ timeout: 30_000 });
       });
       playExpect(kubernetesResourceExists(ENVTEST_KUBECONFIG, 'clusterrolebinding', E2E_CLUSTER_ROLE_NAME)).toBeFalsy();
       playExpect(kubernetesResourceExists(ENVTEST_KUBECONFIG, 'clusterrole', E2E_CLUSTER_ROLE_NAME)).toBeFalsy();
