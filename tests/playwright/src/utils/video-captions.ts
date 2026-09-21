@@ -16,7 +16,7 @@
  * SPDX-License-Identifier: Apache-2.0
  ***********************************************************************/
 
-import type { Page, TestInfo } from '@playwright/test';
+import type { Locator, Page, TestInfo } from '@playwright/test';
 
 import { test } from '@podman-desktop/tests-playwright';
 
@@ -26,6 +26,10 @@ const CAPTION_PACE_MS = Number(process.env.CAPTION_PACE_MS) || 0;
 const CAPTION_TYPING_DURATION_MS = Number(process.env.CAPTION_TYPING_DURATION_MS) || 0;
 const CAPTION_TIMEOUT_BUFFER_MS = 120_000;
 const ACTION_STEP_PREFIX = '[video-caption] ';
+
+type LocatorPrototype = Pick<Locator, 'check' | 'click' | 'fill' | 'uncheck'>;
+
+let automaticActionCaptionsInstalled = false;
 
 /**
  * Records a viewer-facing caption after a UI outcome has been verified.
@@ -42,8 +46,72 @@ export async function recordedStep<T>(caption: string, action: () => Promise<T>)
 export function configureVideoCaptions(page: Page, testInfo: TestInfo): void {
   enableSlowTyping(page, CAPTION_TYPING_DURATION_MS);
   if (CAPTION_PACE_MS > 0) {
+    enableAutomaticActionCaptions(page);
     testInfo.setTimeout(testInfo.timeout + CAPTION_TIMEOUT_BUFFER_MS);
   }
+}
+
+/**
+ * Captions common UI interactions without requiring annotations in each test.
+ * This remains recording-only: normal e2e runs do not change their timing or
+ * emit the extra Playwright steps.
+ */
+function enableAutomaticActionCaptions(page: Page): void {
+  if (automaticActionCaptionsInstalled) {
+    return;
+  }
+
+  const prototype = Object.getPrototypeOf(page.locator('body')) as LocatorPrototype;
+  const originalClick = prototype.click;
+  const originalCheck = prototype.check;
+  const originalUncheck = prototype.uncheck;
+  const originalFill = prototype.fill;
+
+  prototype.click = async function (this: Locator, options): Promise<void> {
+    await recordedStep(`Click ${await controlLabel(this)}`, () => originalClick.call(this, options));
+  };
+  prototype.check = async function (this: Locator, options): Promise<void> {
+    await recordedStep(`Select ${await controlLabel(this)}`, () => originalCheck.call(this, options));
+  };
+  prototype.uncheck = async function (this: Locator, options): Promise<void> {
+    await recordedStep(`Clear ${await controlLabel(this)}`, () => originalUncheck.call(this, options));
+  };
+  prototype.fill = async function (this: Locator, value: string, options): Promise<void> {
+    await recordedStep(`Enter text in ${await controlLabel(this)}`, () => originalFill.call(this, value, options));
+  };
+  automaticActionCaptionsInstalled = true;
+}
+
+async function controlLabel(locator: Locator): Promise<string> {
+  try {
+    const label = await locator.evaluate(element => {
+      const labelledBy = element.getAttribute('aria-labelledby');
+      const labelledByText = labelledBy
+        ?.split(/\s+/)
+        .map(id => document.getElementById(id)?.textContent)
+        .filter(Boolean)
+        .join(' ');
+      const associatedLabel =
+        element.closest('label')?.textContent ??
+        (element.id ? document.querySelector(`label[for="${element.id}"]`)?.textContent : undefined);
+      return (
+        element.getAttribute('aria-label') ??
+        labelledByText ??
+        associatedLabel ??
+        element.getAttribute('title') ??
+        element.getAttribute('name') ??
+        element.getAttribute('placeholder') ??
+        element.textContent
+      );
+    });
+    const normalized = label?.replaceAll(/\s+/g, ' ').trim();
+    if (normalized) {
+      return normalized.slice(0, 80);
+    }
+  } catch {
+    // A locator can disappear immediately after an action; use a safe fallback.
+  }
+  return 'control';
 }
 
 async function pauseForCaption(): Promise<void> {
