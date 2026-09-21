@@ -27,7 +27,8 @@ import { enableSlowTyping } from './slow-typing';
 const CAPTION_PACE_MS = Number(process.env.CAPTION_PACE_MS) || 0;
 const CAPTION_TYPING_DURATION_MS = Number(process.env.CAPTION_TYPING_DURATION_MS) || 0;
 const CAPTION_TIMEOUT_BUFFER_MS = 120_000;
-const ACTION_STEP_PREFIX = '[video-caption] ';
+const OUTCOME_STEP_PREFIX = '[video-caption] ';
+const ACTION_STEP_PREFIX = '[video-action] ';
 
 type LocatorPrototype = Pick<Locator, 'check' | 'click' | 'fill' | 'uncheck'>;
 
@@ -40,7 +41,7 @@ const recordedStepScope = new AsyncLocalStorage<boolean>();
  * rather than annotate individual UI interactions.
  */
 export async function recordedStep<T>(caption: string, action: () => Promise<T>): Promise<T> {
-  const result = await test.step(`${ACTION_STEP_PREFIX}${caption}`, () => recordedStepScope.run(true, action));
+  const result = await test.step(`${OUTCOME_STEP_PREFIX}${caption}`, () => recordedStepScope.run(true, action));
   await pauseForCaption();
   return result;
 }
@@ -74,31 +75,37 @@ function enableAutomaticActionCaptions(page: Page): void {
     if (!isInsideRecordedStep()) {
       return originalClick.call(this, options);
     }
-    await recordedStep(`Click ${await controlLabel(this)}`, () => originalClick.call(this, options));
+    await recordedAction(`Click ${await controlLabel(this)}`, () => originalClick.call(this, options));
   };
   prototype.check = async function (this: Locator, options): Promise<void> {
     if (!isInsideRecordedStep()) {
       return originalCheck.call(this, options);
     }
-    await recordedStep(`Select ${await controlLabel(this)}`, () => originalCheck.call(this, options));
+    await recordedAction(`Select ${await controlLabel(this)}`, () => originalCheck.call(this, options));
   };
   prototype.uncheck = async function (this: Locator, options): Promise<void> {
     if (!isInsideRecordedStep()) {
       return originalUncheck.call(this, options);
     }
-    await recordedStep(`Clear ${await controlLabel(this)}`, () => originalUncheck.call(this, options));
+    await recordedAction(`Clear ${await controlLabel(this)}`, () => originalUncheck.call(this, options));
   };
   prototype.fill = async function (this: Locator, value: string, options): Promise<void> {
     if (!isInsideRecordedStep()) {
       return originalFill.call(this, value, options);
     }
-    await recordedStep(`Enter text in ${await controlLabel(this)}`, () => originalFill.call(this, value, options));
+    await recordedAction(`Enter text in ${await controlLabel(this)}`, () => originalFill.call(this, value, options));
   };
   automaticActionCaptionsInstalled = true;
 }
 
 function isInsideRecordedStep(): boolean {
   return recordedStepScope.getStore() === true;
+}
+
+async function recordedAction<T>(caption: string, action: () => Promise<T>): Promise<T> {
+  const result = await test.step(`${ACTION_STEP_PREFIX}${caption}`, action);
+  await pauseForCaption();
+  return result;
 }
 
 async function controlLabel(locator: Locator): Promise<string> {

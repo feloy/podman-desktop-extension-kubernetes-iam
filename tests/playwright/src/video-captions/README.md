@@ -67,8 +67,10 @@ await recordedStep('Create the administrator user', async () => {
 ```
 
 The caption starts after the callback succeeds, while the verified UI state is
-already visible. Avoid wrapping individual interactions in `recordedStep`:
-they are captioned automatically within the meaningful business outcome.
+already visible. Verified outcome captions are green; automatically captioned
+interactions within the outcome are yellow. Avoid wrapping individual
+interactions in `recordedStep`: they are captioned automatically within the
+meaningful business outcome.
 
 ## Chapters
 

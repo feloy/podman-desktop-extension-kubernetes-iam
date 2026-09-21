@@ -32,7 +32,7 @@ type Cue = {
   start: number;
   end: number;
   text: string;
-  style: 'Caption' | 'Interaction';
+  style: 'Assertion' | 'Caption' | 'Interaction';
 };
 
 type Chapter = {
@@ -43,7 +43,8 @@ type Chapter = {
 };
 
 const DEFAULT_TEST_TITLE_DURATION_MS = 3_000;
-const ACTION_STEP_PREFIX = '[video-caption] ';
+const OUTCOME_STEP_PREFIX = '[video-caption] ';
+const ACTION_STEP_PREFIX = '[video-action] ';
 const GROUP_CHAPTER_SPACING_MS = 1;
 
 /**
@@ -166,6 +167,9 @@ export default class VideoSubtitlesReporter implements Reporter {
   }
 
   private captionForStep(step: TestStep): Pick<Cue, 'text' | 'style'> | undefined {
+    if (step.category === 'test.step' && step.title.startsWith(OUTCOME_STEP_PREFIX)) {
+      return { text: step.title.slice(OUTCOME_STEP_PREFIX.length), style: 'Assertion' };
+    }
     if (step.category === 'test.step' && step.title.startsWith(ACTION_STEP_PREFIX)) {
       return { text: step.title.slice(ACTION_STEP_PREFIX.length), style: 'Interaction' };
     }
@@ -208,6 +212,7 @@ ScaledBorderAndShadow: yes
 [V4+ Styles]
 Format: Name,Fontname,Fontsize,PrimaryColour,SecondaryColour,OutlineColour,BackColour,Bold,Italic,Underline,StrikeOut,ScaleX,ScaleY,Spacing,Angle,BorderStyle,Outline,Shadow,Alignment,MarginL,MarginR,MarginV,Encoding
 Style: Caption,Arial,30,&H00FFFFFF,&H000000FF,&H00141414,&HAA101010,1,0,0,0,100,100,0,0,1,2,1,2,64,64,102,1
+Style: Assertion,Arial,30,&H008CE679,&H000000FF,&H00141414,&HAA101010,1,0,0,0,100,100,0,0,1,2,1,2,64,64,48,1
 Style: Interaction,Arial,30,&H00F6CF6C,&H000000FF,&H00141414,&HAA101010,1,0,0,0,100,100,0,0,1,2,1,2,64,64,48,1
 
 [Events]
