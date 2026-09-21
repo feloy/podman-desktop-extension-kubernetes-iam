@@ -146,6 +146,15 @@ jobs:
         run: |
           "$KUBEBUILDER_ASSETS/kubectl" get all | grep "service/kubernetes"
 
+      - name: Install test CRD
+        env:
+          KUBEBUILDER_ASSETS: ${{ steps.setup-envtest.outputs.KUBEBUILDER_ASSETS }}
+          KUBECONFIG: '${{ steps.run-envtest.outputs.KUBECONFIG }}'
+        shell: bash
+        run: |
+          "$KUBEBUILDER_ASSETS/kubectl" apply -f tests/resources/e2e-test-crd.yaml
+          "$KUBEBUILDER_ASSETS/kubectl" wait --for=condition=Established --timeout=30s crd/widgets.testing.kubernetes-iam.io
+
       - name: Install kubectl on macOS
         if: runner.os == 'macOS'
         shell: bash

@@ -57,6 +57,9 @@ export class DashboardStatesManager implements Disposable {
   #onUsersChange = new Emitter<void>();
   onUsersChange: Event<void> = this.#onUsersChange.event;
 
+  #onContextsHealthChange = new Emitter<ContextsHealthsInfo>();
+  onContextsHealthChange: Event<ContextsHealthsInfo> = this.#onContextsHealthChange.event;
+
   #subscriptions: Disposable[] = [];
   #subscriber: KubernetesDashboardSubscriber | undefined;
 
@@ -103,6 +106,7 @@ export class DashboardStatesManager implements Disposable {
         if (event.healths.some(health => health.reachable)) {
           this.#subscribeToResources();
         }
+        this.#onContextsHealthChange.fire(event);
       }),
     );
 

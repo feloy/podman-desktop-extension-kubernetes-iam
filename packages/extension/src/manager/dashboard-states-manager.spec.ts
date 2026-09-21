@@ -372,6 +372,18 @@ describe('dashboard extension is already installed at init time', () => {
     expect(resourceNames).toContain('clusterrolebindings');
   });
 
+  test('forwards onContextsHealth events to onContextsHealthChange', () => {
+    manager = container.get(DashboardStatesManager);
+    const listener = vi.fn();
+    manager.onContextsHealthChange(listener);
+    manager.init();
+    const event: ContextsHealthsInfo = {
+      healths: [{ contextName: 'ctx1', checking: false, reachable: true, offline: false }],
+    };
+    fireContextsHealth(event);
+    expect(listener).toHaveBeenCalledWith(event);
+  });
+
   test('subscriber is disposed on dispose', () => {
     manager = container.get(DashboardStatesManager);
     manager.init();
