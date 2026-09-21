@@ -26,15 +26,13 @@ type SubtitleReporterOptions = {
   chapterFile: string;
   /** Minimum amount of time a test title remains readable. */
   testTitleDurationMs?: number;
-  /** Minimum amount of time a named assertion remains readable. */
-  assertionDurationMs?: number;
 };
 
 type Cue = {
   start: number;
   end: number;
   text: string;
-  style: 'Caption' | 'Assertion' | 'Interaction';
+  style: 'Caption' | 'Interaction';
 };
 
 type Chapter = {
@@ -44,21 +42,19 @@ type Chapter = {
 };
 
 const DEFAULT_TEST_TITLE_DURATION_MS = 3_000;
-const DEFAULT_ASSERTION_DURATION_MS = 2_000;
 const ACTION_STEP_PREFIX = '[video-caption] ';
 
 /**
  * Creates an ASS subtitle track for the screen recording.
  *
- * A custom Playwright expectation message becomes the title of its `expect`
- * step, so tests can opt into a useful viewer-facing caption without a second
- * annotation API. Generic matcher titles are intentionally skipped.
+ * Explicit, prefixed test steps become viewer-facing captions. Each step ends
+ * only after its UI outcome has been verified, so the caption describes what
+ * is already visible in the recording.
  */
 export default class VideoSubtitlesReporter implements Reporter {
   private readonly outputFile: string;
   private readonly chapterFile: string;
   private readonly testTitleDurationMs: number;
-  private readonly assertionDurationMs: number;
   private readonly captionHoldDurationMs: number;
   private readonly cues: Cue[] = [];
   private readonly chapters: Chapter[] = [];
@@ -69,9 +65,7 @@ export default class VideoSubtitlesReporter implements Reporter {
     this.outputFile = resolve(options.outputFile);
     this.chapterFile = resolve(options.chapterFile);
     this.testTitleDurationMs = options.testTitleDurationMs ?? DEFAULT_TEST_TITLE_DURATION_MS;
-    this.assertionDurationMs = options.assertionDurationMs ?? DEFAULT_ASSERTION_DURATION_MS;
-    this.captionHoldDurationMs =
-      Number(process.env.CAPTION_PACE_MS) || Math.max(this.testTitleDurationMs, this.assertionDurationMs);
+    this.captionHoldDurationMs = Number(process.env.CAPTION_PACE_MS) || this.testTitleDurationMs;
   }
 
   onBegin(): void {
@@ -90,9 +84,8 @@ export default class VideoSubtitlesReporter implements Reporter {
       return;
     }
 
-    // Named expectations are followed by an opt-in pause in the test. Begin
-    // the captions only after the assertion passes, when the described state
-    // is already visible and will remain visible for the whole cue.
+    // Recorded steps pause after their verified outcome. Begin captions at the
+    // end of the step, while that outcome is already on screen.
     const start = this.offset(step.startTime.valueOf() + step.duration);
     const end = start + this.captionHoldDurationMs;
     this.addCue(start, end, test.title, 'Caption');
@@ -137,9 +130,6 @@ export default class VideoSubtitlesReporter implements Reporter {
   }
 
   private captionForStep(step: TestStep): Pick<Cue, 'text' | 'style'> | undefined {
-    if (step.category === 'expect') {
-      return step.title.startsWith('Expect "') ? undefined : { text: step.title, style: 'Assertion' };
-    }
     if (step.category === 'test.step' && step.title.startsWith(ACTION_STEP_PREFIX)) {
       return { text: step.title.slice(ACTION_STEP_PREFIX.length), style: 'Interaction' };
     }
@@ -182,7 +172,6 @@ ScaledBorderAndShadow: yes
 [V4+ Styles]
 Format: Name,Fontname,Fontsize,PrimaryColour,SecondaryColour,OutlineColour,BackColour,Bold,Italic,Underline,StrikeOut,ScaleX,ScaleY,Spacing,Angle,BorderStyle,Outline,Shadow,Alignment,MarginL,MarginR,MarginV,Encoding
 Style: Caption,Arial,30,&H00FFFFFF,&H000000FF,&H00141414,&HAA101010,1,0,0,0,100,100,0,0,1,2,1,2,64,64,102,1
-Style: Assertion,Arial,30,&H008CE679,&H000000FF,&H00141414,&HAA101010,1,0,0,0,100,100,0,0,1,2,1,2,64,64,48,1
 Style: Interaction,Arial,30,&H00F6CF6C,&H000000FF,&H00141414,&HAA101010,1,0,0,0,100,100,0,0,1,2,1,2,64,64,48,1
 
 [Events]
