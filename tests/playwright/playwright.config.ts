@@ -17,17 +17,34 @@
  ***********************************************************************/
 
 import { defineConfig, devices } from '@playwright/test';
+import type { ReporterDescription } from '@playwright/test';
+
+const reporter: ReporterDescription[] = [
+  ['list'],
+  ['junit', { outputFile: './output/junit-results.xml' }],
+  ['json', { outputFile: './output/json-results.json' }],
+  ['html', { open: 'never', outputFolder: './output/html-results/' }],
+];
+
+if (process.env.VIDEO_SUBTITLES === 'true') {
+  reporter.push([
+    './src/video-captions/reporter.ts',
+    {
+      outputFile: './recordings/kubernetes-iam-e2e.ass',
+      chapterFile: './recordings/kubernetes-iam-e2e.ffmetadata',
+      testTitleDurationMs: 3_000,
+      assertionDurationMs: 2_000,
+    },
+  ]);
+}
 
 export default defineConfig({
-  outputDir: './output/',
+  // Keep Playwright's per-test artifacts separate from the HTML report, which
+  // clears its own directory before it is generated.
+  outputDir: './output/test-results/',
   workers: 1,
 
-  reporter: [
-    ['list'],
-    ['junit', { outputFile: './output/junit-results.xml' }],
-    ['json', { outputFile: './output/json-results.json' }],
-    ['html', { open: 'never', outputFolder: './output/html-results/' }],
-  ],
+  reporter,
 
   projects: [
     {
