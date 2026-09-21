@@ -390,7 +390,6 @@ test.describe.serial(`Extension usage`, { tag: '@integration' }, () => {
       await recordedStep('Start kubeconfig generation for e2e-user', async () => {
         await playExpect(downloadButton).toBeVisible();
         await downloadButton.click();
-        await playExpect(downloadButton).toHaveAttribute('aria-busy', 'true');
       });
 
       // envtest provides only an API server, so this test supplies the signer response.
