@@ -34,7 +34,7 @@ jobs:
     steps:
       - name: Build OCI
         id: build
-        uses: podman-desktop/gh-extensions-actions/.github/actions/oci-build@51711eb8a46af8a63ad36d32b63908ce8af8d163 # v0.6.0
+        uses: podman-desktop/gh-extensions-actions/.github/actions/oci-build@dde0e72aec31e5df8918d82db9ca8d298a37d305 # v0.7.0
         with:
           ref: ${{ github.ref }}
 
