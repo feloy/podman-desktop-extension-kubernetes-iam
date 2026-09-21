@@ -44,6 +44,7 @@ type Chapter = {
 
 const DEFAULT_TEST_TITLE_DURATION_MS = 3_000;
 const ACTION_STEP_PREFIX = '[video-caption] ';
+const GROUP_CHAPTER_SPACING_MS = 1;
 
 /**
  * Creates an ASS subtitle track for the screen recording.
@@ -149,7 +150,16 @@ export default class VideoSubtitlesReporter implements Reporter {
         continue;
       }
 
-      const chapter = { start, end, title: `${'#'.repeat(index + 1)} ${titles[index].toUpperCase()}`, depth: index };
+      // MP4 chapters are flat and cannot overlap. Reserve one millisecond for
+      // each parent immediately before the first test, so every group marker
+      // survives muxing while remaining visually at the child's timestamp.
+      const groupStart = Math.max(0, start - (titles.length - index) * GROUP_CHAPTER_SPACING_MS);
+      const chapter = {
+        start: groupStart,
+        end,
+        title: `${'#'.repeat(index + 1)} ${titles[index].toUpperCase()}`,
+        depth: index,
+      };
       this.groupChapters.set(key, chapter);
       this.chapters.push(chapter);
     }
