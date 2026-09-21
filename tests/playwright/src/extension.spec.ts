@@ -304,454 +304,468 @@ test.describe.serial(`Extension usage`, { tag: '@integration' }, () => {
   let mainPage: Page;
   let webview: Page;
 
-  test('Open IAM webview and display the Users page', async ({ runner, page, navigationBar }) => {
-    await recordedStep('Display the IAM Users page', async () => {
-      [mainPage, webview] = await handleWebview(runner, page, navigationBar);
+  test.describe('Users and kubeconfig', () => {
+    test('Open IAM webview and display the Users page', async ({ runner, page, navigationBar }) => {
+      await recordedStep('Display the IAM Users page', async () => {
+        [mainPage, webview] = await handleWebview(runner, page, navigationBar);
+        const usersPage = new UsersPage(webview);
+        await playExpect(usersPage.heading).toBeVisible({ timeout: 30_000 });
+        await playExpect(usersPage.createUserButton).toBeVisible();
+        await playExpect(usersPage.getUserButton('user1')).toBeVisible({ timeout: 60_000 });
+      });
+    });
+
+    test('Open user1 details and display the bound cluster-admin role', async () => {
       const usersPage = new UsersPage(webview);
-      await playExpect(usersPage.heading).toBeVisible({ timeout: 30_000 });
-      await playExpect(usersPage.createUserButton).toBeVisible();
-      await playExpect(usersPage.getUserButton('user1')).toBeVisible({ timeout: 60_000 });
+      let details!: UserDetailsPage;
+      await recordedStep('Inspect user1 cluster-admin permissions', async () => {
+        details = await usersPage.openUser('user1');
+        await playExpect(details.heading).toBeVisible({ timeout: 30_000 });
+        await playExpect(details.addClusterRoleButton).toBeVisible();
+        const roleRow = details.getRoleRow('cluster-admin');
+        await playExpect(roleRow).toBeVisible({ timeout: 30_000 });
+        await playExpect(roleRow.getByRole('cell', { name: 'ClusterRole', exact: true })).toBeVisible();
+        await playExpect(roleRow.getByRole('cell', { name: 'user1-cluster-admin', exact: true })).toBeVisible();
+        const resourceRuleRow = details.getRuleRow('*');
+        await playExpect(resourceRuleRow).toBeVisible({ timeout: 30_000 });
+        await playExpect(resourceRuleRow.getByRole('cell', { name: '*', exact: true })).toHaveCount(3);
+        const nonResourceRuleRow = details.getRuleRow('non-resource');
+        await playExpect(nonResourceRuleRow).toBeVisible({ timeout: 30_000 });
+        await playExpect(nonResourceRuleRow.getByRole('cell', { name: 'non-resource', exact: true })).toBeVisible();
+        await playExpect(nonResourceRuleRow.getByRole('cell', { name: '*', exact: true })).toHaveCount(2);
+        await details.getRevokeRoleButton('cluster-admin').click();
+        const confirmation = mainPage.getByRole('dialog');
+        await playExpect(confirmation).toBeVisible();
+        await confirmation.getByRole('button', { name: 'Cancel', exact: true }).click();
+        await playExpect(roleRow).toBeVisible();
+      });
+      playExpect(
+        kubernetesResourceExists(ENVTEST_KUBECONFIG, 'clusterrolebinding', USER1_CLUSTER_ROLE_BINDING_NAME),
+      ).toBeTruthy();
+
+      await details.closeButton.click();
+      await playExpect(usersPage.heading).toBeVisible();
+    });
+
+    test('Create a user and display it in the Users page', async () => {
+      const usersPage = new UsersPage(webview);
+      const dialog = webview.getByRole('dialog', { name: 'Create user' });
+      await recordedStep('Create e2e-user', async () => {
+        await usersPage.createUserButton.click();
+        await playExpect(dialog).toBeVisible();
+        await dialog.getByRole('textbox', { name: 'User name' }).fill(E2E_USER_NAME);
+        await dialog.getByRole('button', { name: 'Create', exact: true }).click();
+        await playExpect(dialog).not.toBeVisible();
+        await playExpect(usersPage.getUserButton(E2E_USER_NAME)).toBeVisible({ timeout: 30_000 });
+      });
+      await recordedStep('Reject duplicate e2e-user creation', async () => {
+        await usersPage.createUserButton.click();
+        await playExpect(dialog).toBeVisible();
+        await dialog.getByRole('textbox', { name: 'User name' }).fill(E2E_USER_NAME);
+        await playExpect(dialog.getByText(`A user named ${E2E_USER_NAME} already exists.`)).toBeVisible();
+        await playExpect(dialog.getByRole('button', { name: 'Create', exact: true })).toBeDisabled();
+      });
+      await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+
+      const binding = getKubernetesResource(
+        ENVTEST_KUBECONFIG,
+        'clusterrolebinding',
+        'iam-e2e-user-f7802586-basic-user',
+      );
+      playExpect(binding).toMatchObject({
+        roleRef: { kind: 'ClusterRole', name: 'system:basic-user' },
+        subjects: [{ kind: 'User', name: E2E_USER_NAME }],
+      });
+    });
+
+    test('Generate kubeconfig and add its context to the selected file', async () => {
+      test.setTimeout(80_000);
+
+      const usersPage = new UsersPage(webview);
+      const downloadButton = usersPage.getDownloadKubeconfigButton(E2E_USER_NAME);
+      const csrNamesBefore = new Set(certificateSigningRequestNames(ENVTEST_KUBECONFIG));
+      const kubeconfigBefore = fs.readFileSync(PODMAN_DESKTOP_KUBECONFIG, 'utf8');
+      playExpect(kubeconfigBefore).not.toContain(E2E_USER_CONTEXT_NAME);
+
+      await recordedStep('Start kubeconfig generation for e2e-user', async () => {
+        await playExpect(downloadButton).toBeVisible();
+        await downloadButton.click();
+        await playExpect(downloadButton).toHaveAttribute('aria-busy', 'true');
+      });
+
+      // envtest provides only an API server, so this test supplies the signer response.
+      let csrName: string | undefined;
+      await playExpect
+        .poll(
+          () => {
+            csrName = certificateSigningRequestNames(ENVTEST_KUBECONFIG).find(name => !csrNamesBefore.has(name));
+            return csrName;
+          },
+          { timeout: 30_000 },
+        )
+        .toBeTruthy();
+      if (!csrName) {
+        throw new Error('Generated CSR was not found');
+      }
+      const generatedCsrName = csrName;
+      await playExpect
+        .poll(() => certificateSigningRequestIsApproved(ENVTEST_KUBECONFIG, generatedCsrName))
+        .toBeTruthy();
+      signCertificateSigningRequest(ENVTEST_KUBECONFIG, generatedCsrName);
+
+      await playExpect
+        .poll(() => fs.readFileSync(PODMAN_DESKTOP_KUBECONFIG, 'utf8'), { timeout: 60_000 })
+        .toContain(E2E_USER_CONTEXT_NAME);
+    });
+
+    test('Bind user1 cluster-admin role to e2e-user and revoke user1', async () => {
+      // The UI creates a new ClusterRole and binding; it cannot attach the existing seeded
+      // cluster-admin role to e2e-user, so prepare the shared binding directly in the cluster.
+      setClusterRoleBindingUsers(ENVTEST_KUBECONFIG, USER1_CLUSTER_ROLE_BINDING_NAME, ['user1', E2E_USER_NAME]);
+
+      const usersPage = new UsersPage(webview);
+      const e2eUserDetails = await usersPage.openUser(E2E_USER_NAME);
+      await recordedStep('Verify cluster-admin is granted to e2e-user', () =>
+        playExpect(e2eUserDetails.getRoleRow('cluster-admin')).toBeVisible({ timeout: 30_000 }),
+      );
+      await e2eUserDetails.closeButton.click();
+      await playExpect(usersPage.heading).toBeVisible();
+
+      const user1Details = await usersPage.openUser('user1');
+      await recordedStep('Revoke cluster-admin from user1', async () => {
+        await user1Details.getRevokeRoleButton('cluster-admin').click();
+        const confirmation = mainPage.getByRole('dialog');
+        await playExpect(confirmation).toBeVisible();
+        await playExpect(confirmation).toContainText(/Revoke ClusterRole cluster-admin \([^)]*\) from user1/);
+        await playExpect(confirmation.getByRole('button', { name: 'Delete', exact: true })).not.toBeVisible();
+        await confirmation.getByRole('button', { name: 'Revoke', exact: true }).click();
+        await playExpect(user1Details.getRoleRow('cluster-admin')).not.toBeVisible({ timeout: 30_000 });
+      });
+      const binding = getKubernetesResource(ENVTEST_KUBECONFIG, 'clusterrolebinding', USER1_CLUSTER_ROLE_BINDING_NAME);
+      playExpect(binding).toMatchObject({ subjects: [{ kind: 'User', name: E2E_USER_NAME }] });
+      playExpect(resourceSubjectNames(binding)).toEqual([E2E_USER_NAME]);
+      playExpect(kubernetesResourceExists(ENVTEST_KUBECONFIG, 'clusterrole', 'cluster-admin')).toBeTruthy();
+
+      await user1Details.closeButton.click();
+      await playExpect(usersPage.heading).toBeVisible();
+    });
+
+    test('Revoke user1 cluster-admin binding while another binding still grants the role', async () => {
+      // user1 was removed from the original binding above, which still grants cluster-admin to e2e-user.
+      createClusterRoleBindingForUser(
+        ENVTEST_KUBECONFIG,
+        USER1_SECOND_CLUSTER_ROLE_BINDING_NAME,
+        'cluster-admin',
+        'user1',
+      );
+
+      const usersPage = new UsersPage(webview);
+      const user1Details = await usersPage.openUser('user1');
+      await recordedStep('Revoke user1’s remaining cluster-admin binding', async () => {
+        await playExpect(user1Details.getRoleRow('cluster-admin')).toBeVisible({ timeout: 30_000 });
+        await user1Details.getRevokeRoleButton('cluster-admin').click();
+        const confirmation = mainPage.getByRole('dialog');
+        await playExpect(confirmation).toBeVisible();
+        await playExpect(confirmation).toContainText(`ClusterRoleBinding ${USER1_SECOND_CLUSTER_ROLE_BINDING_NAME}`);
+        await playExpect(confirmation.getByRole('button', { name: 'Delete', exact: true })).not.toBeVisible();
+        await confirmation.getByRole('button', { name: 'Revoke', exact: true }).click();
+        await playExpect(user1Details.getRoleRow('cluster-admin')).not.toBeVisible({ timeout: 30_000 });
+      });
+      playExpect(
+        kubernetesResourceExists(ENVTEST_KUBECONFIG, 'clusterrolebinding', USER1_SECOND_CLUSTER_ROLE_BINDING_NAME),
+      ).toBeFalsy();
+      playExpect(
+        kubernetesResourceExists(ENVTEST_KUBECONFIG, 'clusterrolebinding', USER1_CLUSTER_ROLE_BINDING_NAME),
+      ).toBeTruthy();
+      playExpect(kubernetesResourceExists(ENVTEST_KUBECONFIG, 'clusterrole', 'cluster-admin')).toBeTruthy();
+
+      await user1Details.closeButton.click();
+      await playExpect(usersPage.heading).toBeVisible();
     });
   });
 
-  test('Open user1 details and display the bound cluster-admin role', async () => {
-    const usersPage = new UsersPage(webview);
-    let details!: UserDetailsPage;
-    await recordedStep('Inspect user1 cluster-admin permissions', async () => {
-      details = await usersPage.openUser('user1');
+  test.describe('Role management', () => {
+    test('Create namespaced and cluster-scoped roles for the user', async () => {
+      const usersPage = new UsersPage(webview);
+      const details = await usersPage.openUser(E2E_USER_NAME);
       await playExpect(details.heading).toBeVisible({ timeout: 30_000 });
-      await playExpect(details.addClusterRoleButton).toBeVisible();
-      const roleRow = details.getRoleRow('cluster-admin');
-      await playExpect(roleRow).toBeVisible({ timeout: 30_000 });
-      await playExpect(roleRow.getByRole('cell', { name: 'ClusterRole', exact: true })).toBeVisible();
-      await playExpect(roleRow.getByRole('cell', { name: 'user1-cluster-admin', exact: true })).toBeVisible();
-      const resourceRuleRow = details.getRuleRow('*');
-      await playExpect(resourceRuleRow).toBeVisible({ timeout: 30_000 });
-      await playExpect(resourceRuleRow.getByRole('cell', { name: '*', exact: true })).toHaveCount(3);
-      const nonResourceRuleRow = details.getRuleRow('non-resource');
-      await playExpect(nonResourceRuleRow).toBeVisible({ timeout: 30_000 });
-      await playExpect(nonResourceRuleRow.getByRole('cell', { name: 'non-resource', exact: true })).toBeVisible();
-      await playExpect(nonResourceRuleRow.getByRole('cell', { name: '*', exact: true })).toHaveCount(2);
-      await details.getRevokeRoleButton('cluster-admin').click();
-      const confirmation = mainPage.getByRole('dialog');
-      await playExpect(confirmation).toBeVisible();
-      await confirmation.getByRole('button', { name: 'Cancel', exact: true }).click();
-      await playExpect(roleRow).toBeVisible();
-    });
-    playExpect(
-      kubernetesResourceExists(ENVTEST_KUBECONFIG, 'clusterrolebinding', USER1_CLUSTER_ROLE_BINDING_NAME),
-    ).toBeTruthy();
 
-    await details.closeButton.click();
-    await playExpect(usersPage.heading).toBeVisible();
-  });
-
-  test('Create a user and display it in the Users page', async () => {
-    const usersPage = new UsersPage(webview);
-    const dialog = webview.getByRole('dialog', { name: 'Create user' });
-    await recordedStep('Create e2e-user', async () => {
-      await usersPage.createUserButton.click();
-      await playExpect(dialog).toBeVisible();
-      await dialog.getByRole('textbox', { name: 'User name' }).fill(E2E_USER_NAME);
-      await dialog.getByRole('button', { name: 'Create', exact: true }).click();
-      await playExpect(dialog).not.toBeVisible();
-      await playExpect(usersPage.getUserButton(E2E_USER_NAME)).toBeVisible({ timeout: 30_000 });
-    });
-    await recordedStep('Reject duplicate e2e-user creation', async () => {
-      await usersPage.createUserButton.click();
-      await playExpect(dialog).toBeVisible();
-      await dialog.getByRole('textbox', { name: 'User name' }).fill(E2E_USER_NAME);
-      await playExpect(dialog.getByText(`A user named ${E2E_USER_NAME} already exists.`)).toBeVisible();
-      await playExpect(dialog.getByRole('button', { name: 'Create', exact: true })).toBeDisabled();
-    });
-    await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
-
-    const binding = getKubernetesResource(ENVTEST_KUBECONFIG, 'clusterrolebinding', 'iam-e2e-user-f7802586-basic-user');
-    playExpect(binding).toMatchObject({
-      roleRef: { kind: 'ClusterRole', name: 'system:basic-user' },
-      subjects: [{ kind: 'User', name: E2E_USER_NAME }],
-    });
-  });
-
-  test('Generate kubeconfig and add its context to the selected file', async () => {
-    test.setTimeout(80_000);
-
-    const usersPage = new UsersPage(webview);
-    const downloadButton = usersPage.getDownloadKubeconfigButton(E2E_USER_NAME);
-    const csrNamesBefore = new Set(certificateSigningRequestNames(ENVTEST_KUBECONFIG));
-    const kubeconfigBefore = fs.readFileSync(PODMAN_DESKTOP_KUBECONFIG, 'utf8');
-    playExpect(kubeconfigBefore).not.toContain(E2E_USER_CONTEXT_NAME);
-
-    await recordedStep('Start kubeconfig generation for e2e-user', async () => {
-      await playExpect(downloadButton).toBeVisible();
-      await downloadButton.click();
-      await playExpect(downloadButton).toHaveAttribute('aria-busy', 'true');
-    });
-
-    // envtest provides only an API server, so this test supplies the signer response.
-    let csrName: string | undefined;
-    await playExpect
-      .poll(
-        () => {
-          csrName = certificateSigningRequestNames(ENVTEST_KUBECONFIG).find(name => !csrNamesBefore.has(name));
-          return csrName;
-        },
-        { timeout: 30_000 },
-      )
-      .toBeTruthy();
-    if (!csrName) {
-      throw new Error('Generated CSR was not found');
-    }
-    const generatedCsrName = csrName;
-    await playExpect.poll(() => certificateSigningRequestIsApproved(ENVTEST_KUBECONFIG, generatedCsrName)).toBeTruthy();
-    signCertificateSigningRequest(ENVTEST_KUBECONFIG, generatedCsrName);
-
-    await playExpect
-      .poll(() => fs.readFileSync(PODMAN_DESKTOP_KUBECONFIG, 'utf8'), { timeout: 60_000 })
-      .toContain(E2E_USER_CONTEXT_NAME);
-  });
-
-  test('Bind user1 cluster-admin role to e2e-user and revoke user1', async () => {
-    // The UI creates a new ClusterRole and binding; it cannot attach the existing seeded
-    // cluster-admin role to e2e-user, so prepare the shared binding directly in the cluster.
-    setClusterRoleBindingUsers(ENVTEST_KUBECONFIG, USER1_CLUSTER_ROLE_BINDING_NAME, ['user1', E2E_USER_NAME]);
-
-    const usersPage = new UsersPage(webview);
-    const e2eUserDetails = await usersPage.openUser(E2E_USER_NAME);
-    await recordedStep('Verify cluster-admin is granted to e2e-user', () =>
-      playExpect(e2eUserDetails.getRoleRow('cluster-admin')).toBeVisible({ timeout: 30_000 }),
-    );
-    await e2eUserDetails.closeButton.click();
-    await playExpect(usersPage.heading).toBeVisible();
-
-    const user1Details = await usersPage.openUser('user1');
-    await recordedStep('Revoke cluster-admin from user1', async () => {
-      await user1Details.getRevokeRoleButton('cluster-admin').click();
-      const confirmation = mainPage.getByRole('dialog');
-      await playExpect(confirmation).toBeVisible();
-      await playExpect(confirmation).toContainText(/Revoke ClusterRole cluster-admin \([^)]*\) from user1/);
-      await playExpect(confirmation.getByRole('button', { name: 'Delete', exact: true })).not.toBeVisible();
-      await confirmation.getByRole('button', { name: 'Revoke', exact: true }).click();
-      await playExpect(user1Details.getRoleRow('cluster-admin')).not.toBeVisible({ timeout: 30_000 });
-    });
-    const binding = getKubernetesResource(ENVTEST_KUBECONFIG, 'clusterrolebinding', USER1_CLUSTER_ROLE_BINDING_NAME);
-    playExpect(binding).toMatchObject({ subjects: [{ kind: 'User', name: E2E_USER_NAME }] });
-    playExpect(resourceSubjectNames(binding)).toEqual([E2E_USER_NAME]);
-    playExpect(kubernetesResourceExists(ENVTEST_KUBECONFIG, 'clusterrole', 'cluster-admin')).toBeTruthy();
-
-    await user1Details.closeButton.click();
-    await playExpect(usersPage.heading).toBeVisible();
-  });
-
-  test('Revoke user1 cluster-admin binding while another binding still grants the role', async () => {
-    // user1 was removed from the original binding above, which still grants cluster-admin to e2e-user.
-    createClusterRoleBindingForUser(
-      ENVTEST_KUBECONFIG,
-      USER1_SECOND_CLUSTER_ROLE_BINDING_NAME,
-      'cluster-admin',
-      'user1',
-    );
-
-    const usersPage = new UsersPage(webview);
-    const user1Details = await usersPage.openUser('user1');
-    await recordedStep('Revoke user1’s remaining cluster-admin binding', async () => {
-      await playExpect(user1Details.getRoleRow('cluster-admin')).toBeVisible({ timeout: 30_000 });
-      await user1Details.getRevokeRoleButton('cluster-admin').click();
-      const confirmation = mainPage.getByRole('dialog');
-      await playExpect(confirmation).toBeVisible();
-      await playExpect(confirmation).toContainText(`ClusterRoleBinding ${USER1_SECOND_CLUSTER_ROLE_BINDING_NAME}`);
-      await playExpect(confirmation.getByRole('button', { name: 'Delete', exact: true })).not.toBeVisible();
-      await confirmation.getByRole('button', { name: 'Revoke', exact: true }).click();
-      await playExpect(user1Details.getRoleRow('cluster-admin')).not.toBeVisible({ timeout: 30_000 });
-    });
-    playExpect(
-      kubernetesResourceExists(ENVTEST_KUBECONFIG, 'clusterrolebinding', USER1_SECOND_CLUSTER_ROLE_BINDING_NAME),
-    ).toBeFalsy();
-    playExpect(
-      kubernetesResourceExists(ENVTEST_KUBECONFIG, 'clusterrolebinding', USER1_CLUSTER_ROLE_BINDING_NAME),
-    ).toBeTruthy();
-    playExpect(kubernetesResourceExists(ENVTEST_KUBECONFIG, 'clusterrole', 'cluster-admin')).toBeTruthy();
-
-    await user1Details.closeButton.click();
-    await playExpect(usersPage.heading).toBeVisible();
-  });
-
-  test('Create namespaced and cluster-scoped roles for the user', async () => {
-    const usersPage = new UsersPage(webview);
-    const details = await usersPage.openUser(E2E_USER_NAME);
-    await playExpect(details.heading).toBeVisible({ timeout: 30_000 });
-
-    const roleDialog = webview.getByRole('dialog', { name: 'Create role' });
-    const clusterRoleDialog = webview.getByRole('dialog', { name: 'Create cluster role' });
-    await recordedStep('Create namespaced role for e2e-user', async () => {
-      await details.addRoleButton.click();
-      await playExpect(roleDialog).toBeVisible();
-      await roleDialog.getByRole('textbox', { name: 'Role name' }).fill(E2E_ROLE_NAME);
-      await roleDialog.getByRole('textbox', { name: 'Namespace' }).fill(E2E_ROLE_NAMESPACE);
-      await roleDialog.getByRole('button', { name: 'Create', exact: true }).click();
-      await playExpect(roleDialog).not.toBeVisible();
-      await playExpect(details.getRoleRow(E2E_ROLE_NAME)).toBeVisible({ timeout: 30_000 });
-    });
-    await recordedStep('Create cluster-scoped role for e2e-user', async () => {
-      await details.addClusterRoleButton.click();
-      await playExpect(clusterRoleDialog).toBeVisible();
-      await clusterRoleDialog.getByRole('textbox', { name: 'Role name' }).fill(E2E_CLUSTER_ROLE_NAME);
-      await clusterRoleDialog.getByRole('button', { name: 'Create', exact: true }).click();
-      await playExpect(clusterRoleDialog).not.toBeVisible();
-      await playExpect(details.getRoleRow(E2E_CLUSTER_ROLE_NAME)).toBeVisible({ timeout: 30_000 });
-    });
-
-    playExpect(
-      resourceRules(getKubernetesResource(ENVTEST_KUBECONFIG, 'role', E2E_ROLE_NAME, E2E_ROLE_NAMESPACE)),
-    ).toEqual([]);
-    playExpect(
-      getKubernetesResource(ENVTEST_KUBECONFIG, 'rolebinding', E2E_ROLE_NAME, E2E_ROLE_NAMESPACE),
-    ).toMatchObject({
-      roleRef: { kind: 'Role', name: E2E_ROLE_NAME },
-      subjects: [{ kind: 'User', name: E2E_USER_NAME }],
-    });
-    playExpect(resourceRules(getKubernetesResource(ENVTEST_KUBECONFIG, 'clusterrole', E2E_CLUSTER_ROLE_NAME))).toEqual(
-      [],
-    );
-    playExpect(getKubernetesResource(ENVTEST_KUBECONFIG, 'clusterrolebinding', E2E_CLUSTER_ROLE_NAME)).toMatchObject({
-      roleRef: { kind: 'ClusterRole', name: E2E_CLUSTER_ROLE_NAME },
-      subjects: [{ kind: 'User', name: E2E_USER_NAME }],
-    });
-
-    await details.closeButton.click();
-    await playExpect(usersPage.heading).toBeVisible();
-  });
-
-  test('Reject creating a role whose name already exists in the namespace', async () => {
-    const usersPage = new UsersPage(webview);
-    const details = await usersPage.openUser(E2E_USER_NAME);
-    await playExpect(details.heading).toBeVisible({ timeout: 30_000 });
-    const dialog = webview.getByRole('dialog', { name: 'Create role' });
-    await recordedStep('Reject duplicate role creation', async () => {
-      await details.addRoleButton.click();
-      await playExpect(dialog).toBeVisible();
-      await dialog.getByRole('textbox', { name: 'Role name' }).fill(E2E_ROLE_NAME);
-      await dialog.getByRole('textbox', { name: 'Namespace' }).fill(E2E_ROLE_NAMESPACE);
-      await dialog.getByRole('button', { name: 'Create', exact: true }).click();
-      await playExpect(
-        dialog.getByText(
-          `A role or role binding named ${E2E_ROLE_NAME} already exists in namespace ${E2E_ROLE_NAMESPACE}`,
-        ),
-      ).toBeVisible();
-    });
-    playExpect(kubernetesResourceExists(ENVTEST_KUBECONFIG, 'role', E2E_ROLE_NAME, E2E_ROLE_NAMESPACE)).toBeTruthy();
-    playExpect(
-      kubernetesResourceExists(ENVTEST_KUBECONFIG, 'rolebinding', E2E_ROLE_NAME, E2E_ROLE_NAMESPACE),
-    ).toBeTruthy();
-    await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
-
-    await details.closeButton.click();
-    await playExpect(usersPage.heading).toBeVisible();
-  });
-
-  test('Add one rule per API group to a namespaced role', async () => {
-    const usersPage = new UsersPage(webview);
-    const details = await usersPage.openUser(E2E_USER_NAME);
-    await playExpect(details.heading).toBeVisible({ timeout: 30_000 });
-
-    const roleDialog = webview.getByRole('dialog', { name: 'Add rule' });
-    await recordedStep('Add API-group rules to the namespaced role', async () => {
-      await details.getAddRuleButton(E2E_ROLE_NAME).click();
-      await playExpect(roleDialog).toBeVisible();
-      await playExpect(roleDialog.getByRole('checkbox', { name: 'pods', exact: true })).toBeVisible({
-        timeout: 30_000,
+      const roleDialog = webview.getByRole('dialog', { name: 'Create role' });
+      const clusterRoleDialog = webview.getByRole('dialog', { name: 'Create cluster role' });
+      await recordedStep('Create namespaced role for e2e-user', async () => {
+        await details.addRoleButton.click();
+        await playExpect(roleDialog).toBeVisible();
+        await roleDialog.getByRole('textbox', { name: 'Role name' }).fill(E2E_ROLE_NAME);
+        await roleDialog.getByRole('textbox', { name: 'Namespace' }).fill(E2E_ROLE_NAMESPACE);
+        await roleDialog.getByRole('button', { name: 'Create', exact: true }).click();
+        await playExpect(roleDialog).not.toBeVisible();
+        await playExpect(details.getRoleRow(E2E_ROLE_NAME)).toBeVisible({ timeout: 30_000 });
       });
-      await roleDialog.getByRole('checkbox', { name: 'pods', exact: true }).check();
-      await roleDialog.getByRole('checkbox', { name: 'configmaps', exact: true }).check();
-      await roleDialog.getByRole('checkbox', { name: 'deployments', exact: true }).check();
-      await roleDialog.getByRole('radio', { name: 'View', exact: true }).check();
-      await roleDialog.getByRole('button', { name: 'Add rules', exact: true }).click();
-      await playExpect(roleDialog).not.toBeVisible();
-    });
-
-    playExpect(
-      resourceRules(getKubernetesResource(ENVTEST_KUBECONFIG, 'role', E2E_ROLE_NAME, E2E_ROLE_NAMESPACE)),
-    ).toEqual([
-      { apiGroups: [''], resources: ['configmaps', 'pods'], verbs: ['get', 'list', 'watch'] },
-      { apiGroups: ['apps'], resources: ['deployments'], verbs: ['get', 'list', 'watch'] },
-    ]);
-
-    await details.closeButton.click();
-    await playExpect(usersPage.heading).toBeVisible();
-  });
-
-  test('Add a rule restricted to named resources', async () => {
-    const usersPage = new UsersPage(webview);
-    const details = await usersPage.openUser(E2E_USER_NAME);
-    await playExpect(details.heading).toBeVisible({ timeout: 30_000 });
-
-    const roleDialog = webview.getByRole('dialog', { name: 'Add rule' });
-    await recordedStep('Add a named-pod rule', async () => {
-      await details.getAddRuleButton(E2E_ROLE_NAME).click();
-      await playExpect(roleDialog).toBeVisible();
-      await playExpect(roleDialog.getByRole('checkbox', { name: 'pods', exact: true })).toBeVisible({
-        timeout: 30_000,
+      await recordedStep('Create cluster-scoped role for e2e-user', async () => {
+        await details.addClusterRoleButton.click();
+        await playExpect(clusterRoleDialog).toBeVisible();
+        await clusterRoleDialog.getByRole('textbox', { name: 'Role name' }).fill(E2E_CLUSTER_ROLE_NAME);
+        await clusterRoleDialog.getByRole('button', { name: 'Create', exact: true }).click();
+        await playExpect(clusterRoleDialog).not.toBeVisible();
+        await playExpect(details.getRoleRow(E2E_CLUSTER_ROLE_NAME)).toBeVisible({ timeout: 30_000 });
       });
-      await roleDialog.getByRole('checkbox', { name: 'pods', exact: true }).check();
-      await roleDialog.getByRole('checkbox', { name: 'get', exact: true }).check();
-      await roleDialog.getByRole('button', { name: 'Restrict to named resources', exact: true }).click();
-      const resourceNames = roleDialog.getByRole('textbox', { name: 'Resource names', exact: true });
-      await resourceNames.fill('pod-z');
-      await resourceNames.press('Enter');
-      await resourceNames.fill('pod-a');
-      await resourceNames.press('Enter');
-      await roleDialog.getByRole('button', { name: 'Add rules', exact: true }).click();
-      await playExpect(roleDialog).not.toBeVisible();
-    });
 
-    playExpect(
-      resourceRules(getKubernetesResource(ENVTEST_KUBECONFIG, 'role', E2E_ROLE_NAME, E2E_ROLE_NAMESPACE)),
-    ).toContainEqual({ apiGroups: [''], resources: ['pods'], verbs: ['get'], resourceNames: ['pod-a', 'pod-z'] });
-
-    await details.closeButton.click();
-    await playExpect(usersPage.heading).toBeVisible();
-  });
-
-  test('Add a rule for a subresource', async () => {
-    const usersPage = new UsersPage(webview);
-    const details = await usersPage.openUser(E2E_USER_NAME);
-    await playExpect(details.heading).toBeVisible({ timeout: 30_000 });
-
-    const roleDialog = webview.getByRole('dialog', { name: 'Add rule' });
-    await recordedStep('Add a pods/log subresource rule', async () => {
-      await details.getAddRuleButton(E2E_ROLE_NAME).click();
-      await playExpect(roleDialog).toBeVisible();
-      await roleDialog.getByRole('checkbox', { name: 'show subresources', exact: true }).check();
-      await playExpect(roleDialog.getByRole('checkbox', { name: 'pods/log', exact: true })).toBeVisible({
-        timeout: 30_000,
+      playExpect(
+        resourceRules(getKubernetesResource(ENVTEST_KUBECONFIG, 'role', E2E_ROLE_NAME, E2E_ROLE_NAMESPACE)),
+      ).toEqual([]);
+      playExpect(
+        getKubernetesResource(ENVTEST_KUBECONFIG, 'rolebinding', E2E_ROLE_NAME, E2E_ROLE_NAMESPACE),
+      ).toMatchObject({
+        roleRef: { kind: 'Role', name: E2E_ROLE_NAME },
+        subjects: [{ kind: 'User', name: E2E_USER_NAME }],
       });
-      await roleDialog.getByRole('checkbox', { name: 'pods/log', exact: true }).check();
-      await roleDialog.getByRole('checkbox', { name: 'get', exact: true }).check();
-      await roleDialog.getByRole('button', { name: 'Add rules', exact: true }).click();
-      await playExpect(roleDialog).not.toBeVisible();
-    });
-
-    playExpect(
-      resourceRules(getKubernetesResource(ENVTEST_KUBECONFIG, 'role', E2E_ROLE_NAME, E2E_ROLE_NAMESPACE)),
-    ).toContainEqual({ apiGroups: [''], resources: ['pods/log'], verbs: ['get'] });
-
-    await details.closeButton.click();
-    await playExpect(usersPage.heading).toBeVisible();
-  });
-
-  test('Add a rule for a custom resource', async () => {
-    const usersPage = new UsersPage(webview);
-    const details = await usersPage.openUser(E2E_USER_NAME);
-    await playExpect(details.heading).toBeVisible({ timeout: 30_000 });
-
-    const roleDialog = webview.getByRole('dialog', { name: 'Add rule' });
-    await recordedStep('Add a custom-resource rule', async () => {
-      await details.getAddRuleButton(E2E_ROLE_NAME).click();
-      await playExpect(roleDialog).toBeVisible();
-      await playExpect(roleDialog.getByRole('checkbox', { name: 'widgets', exact: true })).toBeVisible({
-        timeout: 30_000,
+      playExpect(
+        resourceRules(getKubernetesResource(ENVTEST_KUBECONFIG, 'clusterrole', E2E_CLUSTER_ROLE_NAME)),
+      ).toEqual([]);
+      playExpect(getKubernetesResource(ENVTEST_KUBECONFIG, 'clusterrolebinding', E2E_CLUSTER_ROLE_NAME)).toMatchObject({
+        roleRef: { kind: 'ClusterRole', name: E2E_CLUSTER_ROLE_NAME },
+        subjects: [{ kind: 'User', name: E2E_USER_NAME }],
       });
-      await roleDialog.getByRole('checkbox', { name: 'widgets', exact: true }).check();
-      await roleDialog.getByRole('checkbox', { name: 'get', exact: true }).check();
-      await roleDialog.getByRole('button', { name: 'Add rules', exact: true }).click();
-      await playExpect(roleDialog).not.toBeVisible();
+
+      await details.closeButton.click();
+      await playExpect(usersPage.heading).toBeVisible();
     });
 
-    playExpect(
-      resourceRules(getKubernetesResource(ENVTEST_KUBECONFIG, 'role', E2E_ROLE_NAME, E2E_ROLE_NAMESPACE)),
-    ).toContainEqual({ apiGroups: ['testing.kubernetes-iam.io'], resources: ['widgets'], verbs: ['get'] });
-
-    await details.closeButton.click();
-    await playExpect(usersPage.heading).toBeVisible();
-  });
-
-  test('Add a rule to a cluster-scoped role', async () => {
-    const usersPage = new UsersPage(webview);
-    const details = await usersPage.openUser(E2E_USER_NAME);
-    await playExpect(details.heading).toBeVisible({ timeout: 30_000 });
-
-    const clusterRoleDialog = webview.getByRole('dialog', { name: 'Add rule' });
-    await recordedStep('Add a node rule to the cluster-scoped role', async () => {
-      await details.getAddRuleButton(E2E_CLUSTER_ROLE_NAME).click();
-      await playExpect(clusterRoleDialog).toBeVisible();
-      await playExpect(clusterRoleDialog.getByRole('checkbox', { name: 'nodes', exact: true })).toBeVisible({
-        timeout: 30_000,
+    test('Reject creating a role whose name already exists in the namespace', async () => {
+      const usersPage = new UsersPage(webview);
+      const details = await usersPage.openUser(E2E_USER_NAME);
+      await playExpect(details.heading).toBeVisible({ timeout: 30_000 });
+      const dialog = webview.getByRole('dialog', { name: 'Create role' });
+      await recordedStep('Reject duplicate role creation', async () => {
+        await details.addRoleButton.click();
+        await playExpect(dialog).toBeVisible();
+        await dialog.getByRole('textbox', { name: 'Role name' }).fill(E2E_ROLE_NAME);
+        await dialog.getByRole('textbox', { name: 'Namespace' }).fill(E2E_ROLE_NAMESPACE);
+        await dialog.getByRole('button', { name: 'Create', exact: true }).click();
+        await playExpect(
+          dialog.getByText(
+            `A role or role binding named ${E2E_ROLE_NAME} already exists in namespace ${E2E_ROLE_NAMESPACE}`,
+          ),
+        ).toBeVisible();
       });
-      await clusterRoleDialog.getByRole('checkbox', { name: 'nodes', exact: true }).check();
-      await clusterRoleDialog.getByRole('radio', { name: 'View', exact: true }).check();
-      await clusterRoleDialog.getByRole('button', { name: 'Add rules', exact: true }).click();
-      await playExpect(clusterRoleDialog).not.toBeVisible();
+      playExpect(kubernetesResourceExists(ENVTEST_KUBECONFIG, 'role', E2E_ROLE_NAME, E2E_ROLE_NAMESPACE)).toBeTruthy();
+      playExpect(
+        kubernetesResourceExists(ENVTEST_KUBECONFIG, 'rolebinding', E2E_ROLE_NAME, E2E_ROLE_NAMESPACE),
+      ).toBeTruthy();
+      await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+
+      await details.closeButton.click();
+      await playExpect(usersPage.heading).toBeVisible();
     });
-
-    playExpect(resourceRules(getKubernetesResource(ENVTEST_KUBECONFIG, 'clusterrole', E2E_CLUSTER_ROLE_NAME))).toEqual([
-      { apiGroups: [''], resources: ['nodes'], verbs: ['get', 'list', 'watch'] },
-    ]);
-
-    await details.closeButton.click();
-    await playExpect(usersPage.heading).toBeVisible();
   });
 
-  test('Revoke the namespaced role and keep it', async () => {
-    const usersPage = new UsersPage(webview);
-    const userDetails = await usersPage.openUser(E2E_USER_NAME);
-    await playExpect(userDetails.getRoleRow(E2E_ROLE_NAME)).toBeVisible({ timeout: 30_000 });
+  test.describe('Rule management', () => {
+    test('Add one rule per API group to a namespaced role', async () => {
+      const usersPage = new UsersPage(webview);
+      const details = await usersPage.openUser(E2E_USER_NAME);
+      await playExpect(details.heading).toBeVisible({ timeout: 30_000 });
 
-    await recordedStep('Revoke the namespaced role from e2e-user', async () => {
-      await userDetails.getRevokeRoleButton(E2E_ROLE_NAME).click();
-      const confirmation = mainPage.getByRole('dialog');
-      await playExpect(confirmation).toBeVisible();
-      await playExpect(confirmation).toContainText(`Revoke Role ${E2E_ROLE_NAME}`);
-      await confirmation.getByRole('button', { name: 'Revoke', exact: true }).click();
-      await playExpect(userDetails.getRoleRow(E2E_ROLE_NAME)).not.toBeVisible({ timeout: 30_000 });
+      const roleDialog = webview.getByRole('dialog', { name: 'Add rule' });
+      await recordedStep('Add API-group rules to the namespaced role', async () => {
+        await details.getAddRuleButton(E2E_ROLE_NAME).click();
+        await playExpect(roleDialog).toBeVisible();
+        await playExpect(roleDialog.getByRole('checkbox', { name: 'pods', exact: true })).toBeVisible({
+          timeout: 30_000,
+        });
+        await roleDialog.getByRole('checkbox', { name: 'pods', exact: true }).check();
+        await roleDialog.getByRole('checkbox', { name: 'configmaps', exact: true }).check();
+        await roleDialog.getByRole('checkbox', { name: 'deployments', exact: true }).check();
+        await roleDialog.getByRole('radio', { name: 'View', exact: true }).check();
+        await roleDialog.getByRole('button', { name: 'Add rules', exact: true }).click();
+        await playExpect(roleDialog).not.toBeVisible();
+      });
+
+      playExpect(
+        resourceRules(getKubernetesResource(ENVTEST_KUBECONFIG, 'role', E2E_ROLE_NAME, E2E_ROLE_NAMESPACE)),
+      ).toEqual([
+        { apiGroups: [''], resources: ['configmaps', 'pods'], verbs: ['get', 'list', 'watch'] },
+        { apiGroups: ['apps'], resources: ['deployments'], verbs: ['get', 'list', 'watch'] },
+      ]);
+
+      await details.closeButton.click();
+      await playExpect(usersPage.heading).toBeVisible();
     });
-    playExpect(
-      kubernetesResourceExists(ENVTEST_KUBECONFIG, 'rolebinding', E2E_ROLE_NAME, E2E_ROLE_NAMESPACE),
-    ).toBeFalsy();
-    playExpect(kubernetesResourceExists(ENVTEST_KUBECONFIG, 'role', E2E_ROLE_NAME, E2E_ROLE_NAMESPACE)).toBeTruthy();
 
-    await userDetails.closeButton.click();
-    await playExpect(usersPage.heading).toBeVisible();
+    test('Add a rule restricted to named resources', async () => {
+      const usersPage = new UsersPage(webview);
+      const details = await usersPage.openUser(E2E_USER_NAME);
+      await playExpect(details.heading).toBeVisible({ timeout: 30_000 });
+
+      const roleDialog = webview.getByRole('dialog', { name: 'Add rule' });
+      await recordedStep('Add a named-pod rule', async () => {
+        await details.getAddRuleButton(E2E_ROLE_NAME).click();
+        await playExpect(roleDialog).toBeVisible();
+        await playExpect(roleDialog.getByRole('checkbox', { name: 'pods', exact: true })).toBeVisible({
+          timeout: 30_000,
+        });
+        await roleDialog.getByRole('checkbox', { name: 'pods', exact: true }).check();
+        await roleDialog.getByRole('checkbox', { name: 'get', exact: true }).check();
+        await roleDialog.getByRole('button', { name: 'Restrict to named resources', exact: true }).click();
+        const resourceNames = roleDialog.getByRole('textbox', { name: 'Resource names', exact: true });
+        await resourceNames.fill('pod-z');
+        await resourceNames.press('Enter');
+        await resourceNames.fill('pod-a');
+        await resourceNames.press('Enter');
+        await roleDialog.getByRole('button', { name: 'Add rules', exact: true }).click();
+        await playExpect(roleDialog).not.toBeVisible();
+      });
+
+      playExpect(
+        resourceRules(getKubernetesResource(ENVTEST_KUBECONFIG, 'role', E2E_ROLE_NAME, E2E_ROLE_NAMESPACE)),
+      ).toContainEqual({ apiGroups: [''], resources: ['pods'], verbs: ['get'], resourceNames: ['pod-a', 'pod-z'] });
+
+      await details.closeButton.click();
+      await playExpect(usersPage.heading).toBeVisible();
+    });
+
+    test('Add a rule for a subresource', async () => {
+      const usersPage = new UsersPage(webview);
+      const details = await usersPage.openUser(E2E_USER_NAME);
+      await playExpect(details.heading).toBeVisible({ timeout: 30_000 });
+
+      const roleDialog = webview.getByRole('dialog', { name: 'Add rule' });
+      await recordedStep('Add a pods/log subresource rule', async () => {
+        await details.getAddRuleButton(E2E_ROLE_NAME).click();
+        await playExpect(roleDialog).toBeVisible();
+        await roleDialog.getByRole('checkbox', { name: 'show subresources', exact: true }).check();
+        await playExpect(roleDialog.getByRole('checkbox', { name: 'pods/log', exact: true })).toBeVisible({
+          timeout: 30_000,
+        });
+        await roleDialog.getByRole('checkbox', { name: 'pods/log', exact: true }).check();
+        await roleDialog.getByRole('checkbox', { name: 'get', exact: true }).check();
+        await roleDialog.getByRole('button', { name: 'Add rules', exact: true }).click();
+        await playExpect(roleDialog).not.toBeVisible();
+      });
+
+      playExpect(
+        resourceRules(getKubernetesResource(ENVTEST_KUBECONFIG, 'role', E2E_ROLE_NAME, E2E_ROLE_NAMESPACE)),
+      ).toContainEqual({ apiGroups: [''], resources: ['pods/log'], verbs: ['get'] });
+
+      await details.closeButton.click();
+      await playExpect(usersPage.heading).toBeVisible();
+    });
+
+    test('Add a rule for a custom resource', async () => {
+      const usersPage = new UsersPage(webview);
+      const details = await usersPage.openUser(E2E_USER_NAME);
+      await playExpect(details.heading).toBeVisible({ timeout: 30_000 });
+
+      const roleDialog = webview.getByRole('dialog', { name: 'Add rule' });
+      await recordedStep('Add a custom-resource rule', async () => {
+        await details.getAddRuleButton(E2E_ROLE_NAME).click();
+        await playExpect(roleDialog).toBeVisible();
+        await playExpect(roleDialog.getByRole('checkbox', { name: 'widgets', exact: true })).toBeVisible({
+          timeout: 30_000,
+        });
+        await roleDialog.getByRole('checkbox', { name: 'widgets', exact: true }).check();
+        await roleDialog.getByRole('checkbox', { name: 'get', exact: true }).check();
+        await roleDialog.getByRole('button', { name: 'Add rules', exact: true }).click();
+        await playExpect(roleDialog).not.toBeVisible();
+      });
+
+      playExpect(
+        resourceRules(getKubernetesResource(ENVTEST_KUBECONFIG, 'role', E2E_ROLE_NAME, E2E_ROLE_NAMESPACE)),
+      ).toContainEqual({ apiGroups: ['testing.kubernetes-iam.io'], resources: ['widgets'], verbs: ['get'] });
+
+      await details.closeButton.click();
+      await playExpect(usersPage.heading).toBeVisible();
+    });
+
+    test('Add a rule to a cluster-scoped role', async () => {
+      const usersPage = new UsersPage(webview);
+      const details = await usersPage.openUser(E2E_USER_NAME);
+      await playExpect(details.heading).toBeVisible({ timeout: 30_000 });
+
+      const clusterRoleDialog = webview.getByRole('dialog', { name: 'Add rule' });
+      await recordedStep('Add a node rule to the cluster-scoped role', async () => {
+        await details.getAddRuleButton(E2E_CLUSTER_ROLE_NAME).click();
+        await playExpect(clusterRoleDialog).toBeVisible();
+        await playExpect(clusterRoleDialog.getByRole('checkbox', { name: 'nodes', exact: true })).toBeVisible({
+          timeout: 30_000,
+        });
+        await clusterRoleDialog.getByRole('checkbox', { name: 'nodes', exact: true }).check();
+        await clusterRoleDialog.getByRole('radio', { name: 'View', exact: true }).check();
+        await clusterRoleDialog.getByRole('button', { name: 'Add rules', exact: true }).click();
+        await playExpect(clusterRoleDialog).not.toBeVisible();
+      });
+
+      playExpect(
+        resourceRules(getKubernetesResource(ENVTEST_KUBECONFIG, 'clusterrole', E2E_CLUSTER_ROLE_NAME)),
+      ).toEqual([{ apiGroups: [''], resources: ['nodes'], verbs: ['get', 'list', 'watch'] }]);
+
+      await details.closeButton.click();
+      await playExpect(usersPage.heading).toBeVisible();
+    });
   });
 
-  test('Create a role with the same name in another namespace', async () => {
-    const usersPage = new UsersPage(webview);
-    const details = await usersPage.openUser(E2E_USER_NAME);
-    await playExpect(details.heading).toBeVisible({ timeout: 30_000 });
-    const dialog = webview.getByRole('dialog', { name: 'Create role' });
-    await recordedStep('Create the same role name in kube-system', async () => {
-      await details.addRoleButton.click();
-      await playExpect(dialog).toBeVisible();
-      await dialog.getByRole('textbox', { name: 'Role name' }).fill(E2E_ROLE_NAME);
-      await dialog.getByRole('textbox', { name: 'Namespace' }).fill(E2E_SECOND_ROLE_NAMESPACE);
-      await dialog.getByRole('button', { name: 'Create', exact: true }).click();
-      await playExpect(dialog).not.toBeVisible();
+  test.describe('Role cleanup', () => {
+    test('Revoke the namespaced role and keep it', async () => {
+      const usersPage = new UsersPage(webview);
+      const userDetails = await usersPage.openUser(E2E_USER_NAME);
+      await playExpect(userDetails.getRoleRow(E2E_ROLE_NAME)).toBeVisible({ timeout: 30_000 });
+
+      await recordedStep('Revoke the namespaced role from e2e-user', async () => {
+        await userDetails.getRevokeRoleButton(E2E_ROLE_NAME).click();
+        const confirmation = mainPage.getByRole('dialog');
+        await playExpect(confirmation).toBeVisible();
+        await playExpect(confirmation).toContainText(`Revoke Role ${E2E_ROLE_NAME}`);
+        await confirmation.getByRole('button', { name: 'Revoke', exact: true }).click();
+        await playExpect(userDetails.getRoleRow(E2E_ROLE_NAME)).not.toBeVisible({ timeout: 30_000 });
+      });
+      playExpect(
+        kubernetesResourceExists(ENVTEST_KUBECONFIG, 'rolebinding', E2E_ROLE_NAME, E2E_ROLE_NAMESPACE),
+      ).toBeFalsy();
+      playExpect(kubernetesResourceExists(ENVTEST_KUBECONFIG, 'role', E2E_ROLE_NAME, E2E_ROLE_NAMESPACE)).toBeTruthy();
+
+      await userDetails.closeButton.click();
+      await playExpect(usersPage.heading).toBeVisible();
     });
 
-    playExpect(
-      kubernetesResourceExists(ENVTEST_KUBECONFIG, 'role', E2E_ROLE_NAME, E2E_SECOND_ROLE_NAMESPACE),
-    ).toBeTruthy();
-    playExpect(
-      kubernetesResourceExists(ENVTEST_KUBECONFIG, 'rolebinding', E2E_ROLE_NAME, E2E_SECOND_ROLE_NAMESPACE),
-    ).toBeTruthy();
+    test('Create a role with the same name in another namespace', async () => {
+      const usersPage = new UsersPage(webview);
+      const details = await usersPage.openUser(E2E_USER_NAME);
+      await playExpect(details.heading).toBeVisible({ timeout: 30_000 });
+      const dialog = webview.getByRole('dialog', { name: 'Create role' });
+      await recordedStep('Create the same role name in kube-system', async () => {
+        await details.addRoleButton.click();
+        await playExpect(dialog).toBeVisible();
+        await dialog.getByRole('textbox', { name: 'Role name' }).fill(E2E_ROLE_NAME);
+        await dialog.getByRole('textbox', { name: 'Namespace' }).fill(E2E_SECOND_ROLE_NAMESPACE);
+        await dialog.getByRole('button', { name: 'Create', exact: true }).click();
+        await playExpect(dialog).not.toBeVisible();
+      });
 
-    await details.closeButton.click();
-    await playExpect(usersPage.heading).toBeVisible();
-  });
+      playExpect(
+        kubernetesResourceExists(ENVTEST_KUBECONFIG, 'role', E2E_ROLE_NAME, E2E_SECOND_ROLE_NAMESPACE),
+      ).toBeTruthy();
+      playExpect(
+        kubernetesResourceExists(ENVTEST_KUBECONFIG, 'rolebinding', E2E_ROLE_NAME, E2E_SECOND_ROLE_NAMESPACE),
+      ).toBeTruthy();
 
-  test('Revoke the cluster-scoped role and delete it', async () => {
-    const usersPage = new UsersPage(webview);
-    const userDetails = await usersPage.openUser(E2E_USER_NAME);
-    await playExpect(userDetails.getRoleRow(E2E_CLUSTER_ROLE_NAME)).toBeVisible({ timeout: 30_000 });
-
-    await recordedStep('Delete the cluster-scoped role', async () => {
-      await userDetails.getRevokeRoleButton(E2E_CLUSTER_ROLE_NAME).click();
-      const confirmation = mainPage.getByRole('dialog');
-      await playExpect(confirmation).toBeVisible();
-      await playExpect(confirmation).toContainText(`Revoke ClusterRole ${E2E_CLUSTER_ROLE_NAME}`);
-      await confirmation.getByRole('button', { name: 'Delete', exact: true }).click();
-      await playExpect(userDetails.getRoleRow(E2E_CLUSTER_ROLE_NAME)).not.toBeVisible({ timeout: 30_000 });
+      await details.closeButton.click();
+      await playExpect(usersPage.heading).toBeVisible();
     });
-    playExpect(kubernetesResourceExists(ENVTEST_KUBECONFIG, 'clusterrolebinding', E2E_CLUSTER_ROLE_NAME)).toBeFalsy();
-    playExpect(kubernetesResourceExists(ENVTEST_KUBECONFIG, 'clusterrole', E2E_CLUSTER_ROLE_NAME)).toBeFalsy();
+
+    test('Revoke the cluster-scoped role and delete it', async () => {
+      const usersPage = new UsersPage(webview);
+      const userDetails = await usersPage.openUser(E2E_USER_NAME);
+      await playExpect(userDetails.getRoleRow(E2E_CLUSTER_ROLE_NAME)).toBeVisible({ timeout: 30_000 });
+
+      await recordedStep('Delete the cluster-scoped role', async () => {
+        await userDetails.getRevokeRoleButton(E2E_CLUSTER_ROLE_NAME).click();
+        const confirmation = mainPage.getByRole('dialog');
+        await playExpect(confirmation).toBeVisible();
+        await playExpect(confirmation).toContainText(`Revoke ClusterRole ${E2E_CLUSTER_ROLE_NAME}`);
+        await confirmation.getByRole('button', { name: 'Delete', exact: true }).click();
+        await playExpect(userDetails.getRoleRow(E2E_CLUSTER_ROLE_NAME)).not.toBeVisible({ timeout: 30_000 });
+      });
+      playExpect(kubernetesResourceExists(ENVTEST_KUBECONFIG, 'clusterrolebinding', E2E_CLUSTER_ROLE_NAME)).toBeFalsy();
+      playExpect(kubernetesResourceExists(ENVTEST_KUBECONFIG, 'clusterrole', E2E_CLUSTER_ROLE_NAME)).toBeFalsy();
+    });
   });
 });

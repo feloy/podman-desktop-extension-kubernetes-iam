@@ -39,6 +39,7 @@ type Chapter = {
   start: number;
   end: number;
   title: string;
+  depth: number;
 };
 
 const DEFAULT_TEST_TITLE_DURATION_MS = 3_000;
@@ -58,6 +59,7 @@ export default class VideoSubtitlesReporter implements Reporter {
   private readonly captionHoldDurationMs: number;
   private readonly cues: Cue[] = [];
   private readonly chapters: Chapter[] = [];
+  private readonly groupChapters = new Map<string, Chapter>();
   private readonly testStarts = new Map<TestCase, number>();
   private recordingStartedAt = 0;
 
@@ -100,7 +102,9 @@ export default class VideoSubtitlesReporter implements Reporter {
     }
 
     const end = this.offset(result.startTime.valueOf() + result.duration);
-    this.chapters.push({ start, end: Math.max(start + 1, end), title: test.title });
+    const chapterEnd = Math.max(start + 1, end);
+    this.addGroupChapters(test, start, chapterEnd);
+    this.chapters.push({ start, end: chapterEnd, title: test.title, depth: Number.MAX_SAFE_INTEGER });
   }
 
   onEnd(): void {
@@ -115,7 +119,9 @@ export default class VideoSubtitlesReporter implements Reporter {
     writeFileSync(this.outputFile, `${this.header()}${events.join('\n')}\n`);
 
     const sortedChapters = [...this.chapters];
-    sortedChapters.sort((left, right) => left.start - right.start);
+    sortedChapters.sort(
+      (left, right) => left.start - right.start || left.depth - right.depth || left.title.localeCompare(right.title),
+    );
     const chapters = sortedChapters.map(
       chapter =>
         `[CHAPTER]\nTIMEBASE=1/1000\nSTART=${Math.round(chapter.start)}\nEND=${Math.round(chapter.end)}\ntitle=${this.escapeMetadata(chapter.title)}`,
@@ -126,6 +132,26 @@ export default class VideoSubtitlesReporter implements Reporter {
   private addCue(start: number, end: number, text: string, style: Cue['style']): void {
     if (text.trim()) {
       this.cues.push({ start: Math.max(0, start), end: Math.max(0, end), text, style });
+    }
+  }
+
+  private addGroupChapters(test: TestCase, start: number, end: number): void {
+    const titles: string[] = [];
+    for (let suite: TestCase['parent'] | undefined = test.parent; suite?.type === 'describe'; suite = suite.parent) {
+      titles.unshift(suite.title);
+    }
+
+    for (let index = 0; index < titles.length; index++) {
+      const key = titles.slice(0, index + 1).join('\u0000');
+      const existing = this.groupChapters.get(key);
+      if (existing) {
+        existing.end = Math.max(existing.end, end);
+        continue;
+      }
+
+      const chapter = { start, end, title: `${'#'.repeat(index + 1)} ${titles[index].toUpperCase()}`, depth: index };
+      this.groupChapters.set(key, chapter);
+      this.chapters.push(chapter);
     }
   }
 
