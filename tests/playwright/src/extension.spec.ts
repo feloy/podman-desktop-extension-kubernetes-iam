@@ -56,7 +56,7 @@ const E2E_SECOND_ROLE_NAMESPACE: string = 'kube-system';
 const USER1_CLUSTER_ROLE_BINDING_NAME: string = 'user1-cluster-admin';
 const USER1_SECOND_CLUSTER_ROLE_BINDING_NAME: string = 'user1-cluster-admin-second';
 const CAPTION_PACE_MS = Number(process.env.CAPTION_PACE_MS) || 0;
-const CAPTION_TYPING_DELAY_MS = Number(process.env.CAPTION_TYPING_DELAY_MS) || 0;
+const CAPTION_TYPING_DURATION_MS = Number(process.env.CAPTION_TYPING_DURATION_MS) || 0;
 const CAPTION_TIMEOUT_BUFFER_MS = 120_000;
 const ACTION_STEP_PREFIX = '[video-caption] ';
 
@@ -226,7 +226,7 @@ test.use({
 // Captions deliberately pause after annotated, confirmed UI outcomes.
 // Reserve that presentation time only for the subtitled recording mode.
 test.beforeEach(async ({ page }, testInfo) => {
-  enableSlowTyping(page, CAPTION_TYPING_DELAY_MS);
+  enableSlowTyping(page, CAPTION_TYPING_DURATION_MS);
   if (CAPTION_PACE_MS > 0) {
     testInfo.setTimeout(testInfo.timeout + CAPTION_TIMEOUT_BUFFER_MS);
   }

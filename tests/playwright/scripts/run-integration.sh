@@ -31,7 +31,7 @@ CHAPTERS_FILE="${VIDEO_DIR}/kubernetes-iam-e2e.ffmetadata"
 FFMPEG_LOG="${VIDEO_DIR}/kubernetes-iam-e2e.ffmpeg.log"
 VIDEO_SUBTITLES=false
 CAPTION_PACE_MS=0
-CAPTION_TYPING_DELAY_MS=0
+CAPTION_TYPING_DURATION_MS=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -47,12 +47,12 @@ while [[ $# -gt 0 ]]; do
       CAPTION_PACE_MS="$2"
       shift 2
       ;;
-    --typing-delay-ms)
+    --typing-duration-ms)
       if [[ $# -lt 2 ]]; then
-        echo "--typing-delay-ms requires a value" >&2
+        echo "--typing-duration-ms requires a value" >&2
         exit 2
       fi
-      CAPTION_TYPING_DELAY_MS="$2"
+      CAPTION_TYPING_DURATION_MS="$2"
       shift 2
       ;;
     *)
@@ -62,7 +62,7 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-export VIDEO_SUBTITLES CAPTION_PACE_MS CAPTION_TYPING_DELAY_MS
+export VIDEO_SUBTITLES CAPTION_PACE_MS CAPTION_TYPING_DURATION_MS
 
 if [[ "$(uname -s)" != 'Linux' ]] || ! command -v ffmpeg >/dev/null 2>&1 || ! command -v xvfb-run >/dev/null 2>&1; then
   xvfb-maybe --auto-servernum --server-args="${SERVER_ARGS}" -- npx playwright test src/ --grep @integration
@@ -74,7 +74,7 @@ rm -f "${VIDEO_FILE}" "${RAW_VIDEO_FILE}" "${SUBTITLES_FILE}" "${CHAPTERS_FILE}"
 
 # xvfb-run provides DISPLAY; ffmpeg captures that screen while Playwright uses CDP.
 xvfb-run --auto-servernum --server-args="${SERVER_ARGS}" -- \
-  env RAW_VIDEO_FILE="${RAW_VIDEO_FILE}" FFMPEG_LOG="${FFMPEG_LOG}" SCREEN_SIZE="${SCREEN_SIZE}" VIDEO_SUBTITLES="${VIDEO_SUBTITLES}" CAPTION_PACE_MS="${CAPTION_PACE_MS}" CAPTION_TYPING_DELAY_MS="${CAPTION_TYPING_DELAY_MS}" \
+  env RAW_VIDEO_FILE="${RAW_VIDEO_FILE}" FFMPEG_LOG="${FFMPEG_LOG}" SCREEN_SIZE="${SCREEN_SIZE}" VIDEO_SUBTITLES="${VIDEO_SUBTITLES}" CAPTION_PACE_MS="${CAPTION_PACE_MS}" CAPTION_TYPING_DURATION_MS="${CAPTION_TYPING_DURATION_MS}" \
   bash -c '
     set +e
     display_input="${DISPLAY}"

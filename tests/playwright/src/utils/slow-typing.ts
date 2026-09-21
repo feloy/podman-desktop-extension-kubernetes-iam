@@ -25,12 +25,13 @@ type LocatorPrototype = {
 let installed = false;
 
 /**
- * Replaces Locator.fill with sequential typing for the current worker.
+ * Replaces Locator.fill with sequential typing over a fixed duration for the
+ * current worker.
  * This is installed from a fixture hook, so test authors continue using the
  * regular Locator.fill API.
  */
-export function enableSlowTyping(page: Page, delay: number): void {
-  if (installed || delay <= 0) {
+export function enableSlowTyping(page: Page, duration: number): void {
+  if (installed || duration <= 0) {
     return;
   }
 
@@ -43,7 +44,7 @@ export function enableSlowTyping(page: Page, delay: number): void {
     }
 
     await originalFill.call(this, '', options);
-    await this.pressSequentially(value, { delay });
+    await this.pressSequentially(value, { delay: duration / value.length });
   };
   installed = true;
 }
