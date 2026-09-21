@@ -533,6 +533,134 @@ test.describe.serial(`Extension usage`, { tag: '@integration' }, () => {
     await playExpect(usersPage.heading).toBeVisible();
   });
 
+  test('Add one rule per API group to a namespaced role', async () => {
+    const usersPage = new UsersPage(webview);
+    const details = await usersPage.openUser(E2E_USER_NAME);
+    await playExpect(details.heading).toBeVisible({ timeout: 30_000 });
+
+    await details.getAddRuleButton(E2E_ROLE_NAME).click();
+    const roleDialog = webview.getByRole('dialog', { name: 'Add rule' });
+    await playExpect(roleDialog).toBeVisible();
+    await playExpect(roleDialog.getByRole('checkbox', { name: 'pods', exact: true })).toBeVisible({ timeout: 30_000 });
+    await roleDialog.getByRole('checkbox', { name: 'pods', exact: true }).check();
+    await roleDialog.getByRole('checkbox', { name: 'configmaps', exact: true }).check();
+    await roleDialog.getByRole('checkbox', { name: 'deployments', exact: true }).check();
+    await roleDialog.getByRole('radio', { name: 'View', exact: true }).check();
+    await roleDialog.getByRole('button', { name: 'Add rules', exact: true }).click();
+    await playExpect(roleDialog).not.toBeVisible();
+
+    playExpect(
+      resourceRules(getKubernetesResource(ENVTEST_KUBECONFIG, 'role', E2E_ROLE_NAME, E2E_ROLE_NAMESPACE)),
+    ).toEqual([
+      { apiGroups: [''], resources: ['configmaps', 'pods'], verbs: ['get', 'list', 'watch'] },
+      { apiGroups: ['apps'], resources: ['deployments'], verbs: ['get', 'list', 'watch'] },
+    ]);
+
+    await details.closeButton.click();
+    await playExpect(usersPage.heading).toBeVisible();
+  });
+
+  test('Add a rule restricted to named resources', async () => {
+    const usersPage = new UsersPage(webview);
+    const details = await usersPage.openUser(E2E_USER_NAME);
+    await playExpect(details.heading).toBeVisible({ timeout: 30_000 });
+
+    await details.getAddRuleButton(E2E_ROLE_NAME).click();
+    const roleDialog = webview.getByRole('dialog', { name: 'Add rule' });
+    await playExpect(roleDialog).toBeVisible();
+    await playExpect(roleDialog.getByRole('checkbox', { name: 'pods', exact: true })).toBeVisible({ timeout: 30_000 });
+    await roleDialog.getByRole('checkbox', { name: 'pods', exact: true }).check();
+    await roleDialog.getByRole('checkbox', { name: 'get', exact: true }).check();
+    await roleDialog.getByRole('button', { name: 'Restrict to named resources', exact: true }).click();
+    const resourceNames = roleDialog.getByRole('textbox', { name: 'Resource names', exact: true });
+    await resourceNames.fill('pod-z');
+    await resourceNames.press('Enter');
+    await resourceNames.fill('pod-a');
+    await resourceNames.press('Enter');
+    await roleDialog.getByRole('button', { name: 'Add rules', exact: true }).click();
+    await playExpect(roleDialog).not.toBeVisible();
+
+    playExpect(
+      resourceRules(getKubernetesResource(ENVTEST_KUBECONFIG, 'role', E2E_ROLE_NAME, E2E_ROLE_NAMESPACE)),
+    ).toContainEqual({ apiGroups: [''], resources: ['pods'], verbs: ['get'], resourceNames: ['pod-a', 'pod-z'] });
+
+    await details.closeButton.click();
+    await playExpect(usersPage.heading).toBeVisible();
+  });
+
+  test('Add a rule for a subresource', async () => {
+    const usersPage = new UsersPage(webview);
+    const details = await usersPage.openUser(E2E_USER_NAME);
+    await playExpect(details.heading).toBeVisible({ timeout: 30_000 });
+
+    await details.getAddRuleButton(E2E_ROLE_NAME).click();
+    const roleDialog = webview.getByRole('dialog', { name: 'Add rule' });
+    await playExpect(roleDialog).toBeVisible();
+    await roleDialog.getByRole('checkbox', { name: 'show subresources', exact: true }).check();
+    await playExpect(roleDialog.getByRole('checkbox', { name: 'pods/log', exact: true })).toBeVisible({
+      timeout: 30_000,
+    });
+    await roleDialog.getByRole('checkbox', { name: 'pods/log', exact: true }).check();
+    await roleDialog.getByRole('checkbox', { name: 'get', exact: true }).check();
+    await roleDialog.getByRole('button', { name: 'Add rules', exact: true }).click();
+    await playExpect(roleDialog).not.toBeVisible();
+
+    playExpect(
+      resourceRules(getKubernetesResource(ENVTEST_KUBECONFIG, 'role', E2E_ROLE_NAME, E2E_ROLE_NAMESPACE)),
+    ).toContainEqual({ apiGroups: [''], resources: ['pods/log'], verbs: ['get'] });
+
+    await details.closeButton.click();
+    await playExpect(usersPage.heading).toBeVisible();
+  });
+
+  test('Add a rule for a custom resource', async () => {
+    const usersPage = new UsersPage(webview);
+    const details = await usersPage.openUser(E2E_USER_NAME);
+    await playExpect(details.heading).toBeVisible({ timeout: 30_000 });
+
+    await details.getAddRuleButton(E2E_ROLE_NAME).click();
+    const roleDialog = webview.getByRole('dialog', { name: 'Add rule' });
+    await playExpect(roleDialog).toBeVisible();
+    await playExpect(roleDialog.getByRole('checkbox', { name: 'widgets', exact: true })).toBeVisible({
+      timeout: 30_000,
+    });
+    await roleDialog.getByRole('checkbox', { name: 'widgets', exact: true }).check();
+    await roleDialog.getByRole('checkbox', { name: 'get', exact: true }).check();
+    await roleDialog.getByRole('button', { name: 'Add rules', exact: true }).click();
+    await playExpect(roleDialog).not.toBeVisible();
+
+    playExpect(
+      resourceRules(getKubernetesResource(ENVTEST_KUBECONFIG, 'role', E2E_ROLE_NAME, E2E_ROLE_NAMESPACE)),
+    ).toContainEqual({ apiGroups: ['testing.kubernetes-iam.io'], resources: ['widgets'], verbs: ['get'] });
+
+    await details.closeButton.click();
+    await playExpect(usersPage.heading).toBeVisible();
+  });
+
+  test('Add a rule to a cluster-scoped role', async () => {
+    const usersPage = new UsersPage(webview);
+    const details = await usersPage.openUser(E2E_USER_NAME);
+    await playExpect(details.heading).toBeVisible({ timeout: 30_000 });
+
+    await details.getAddRuleButton(E2E_CLUSTER_ROLE_NAME).click();
+    const clusterRoleDialog = webview.getByRole('dialog', { name: 'Add rule' });
+    await playExpect(clusterRoleDialog).toBeVisible();
+    await playExpect(clusterRoleDialog.getByRole('checkbox', { name: 'nodes', exact: true })).toBeVisible({
+      timeout: 30_000,
+    });
+    await clusterRoleDialog.getByRole('checkbox', { name: 'nodes', exact: true }).check();
+    await clusterRoleDialog.getByRole('radio', { name: 'View', exact: true }).check();
+    await clusterRoleDialog.getByRole('button', { name: 'Add rules', exact: true }).click();
+    await playExpect(clusterRoleDialog).not.toBeVisible();
+
+    playExpect(resourceRules(getKubernetesResource(ENVTEST_KUBECONFIG, 'clusterrole', E2E_CLUSTER_ROLE_NAME))).toEqual([
+      { apiGroups: [''], resources: ['nodes'], verbs: ['get', 'list', 'watch'] },
+    ]);
+
+    await details.closeButton.click();
+    await playExpect(usersPage.heading).toBeVisible();
+  });
+
   test('Revoke the namespaced role and keep it', async () => {
     const usersPage = new UsersPage(webview);
     const userDetails = await usersPage.openUser(E2E_USER_NAME);
