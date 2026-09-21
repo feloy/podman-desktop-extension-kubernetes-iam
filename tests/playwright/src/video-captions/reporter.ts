@@ -47,7 +47,7 @@ const ACTION_STEP_PREFIX = '[video-caption] ';
 const GROUP_CHAPTER_SPACING_MS = 1;
 
 /**
- * Creates an ASS subtitle track for the screen recording.
+ * Creates an ASS subtitle track for an e2e screen recording.
  *
  * Explicit, prefixed test steps become viewer-facing captions. Each step ends
  * only after its UI outcome has been verified, so the caption describes what

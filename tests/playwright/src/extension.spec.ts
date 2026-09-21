@@ -34,7 +34,7 @@ import {
 import { KubernetesIamDetailsPage } from './model/pages/iam-details-page';
 import type { UserDetailsPage } from './model/pages/user-details-page';
 import { UsersPage } from './model/pages/users-page';
-import { configureVideoCaptions, recordedStep } from './utils/video-captions';
+import { configureVideoCaptions, recordedStep } from './video-captions/runtime';
 import { handleWebview } from './utils/webviewHandler';
 
 const DASHBOARD_OCI_IMAGE =

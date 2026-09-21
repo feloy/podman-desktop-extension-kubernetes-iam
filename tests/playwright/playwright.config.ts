@@ -28,7 +28,7 @@ const reporter: ReporterDescription[] = [
 
 if (process.env.VIDEO_SUBTITLES === 'true') {
   reporter.push([
-    './src/reporters/video-subtitles-reporter.ts',
+    './src/video-captions/reporter.ts',
     {
       outputFile: './recordings/kubernetes-iam-e2e.ass',
       chapterFile: './recordings/kubernetes-iam-e2e.ffmetadata',

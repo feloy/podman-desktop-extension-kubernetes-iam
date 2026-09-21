@@ -42,7 +42,7 @@ export async function recordedStep<T>(caption: string, action: () => Promise<T>)
   return result;
 }
 
-/** Configures transparent caption pacing and fixed-duration typing for a test. */
+/** Configures transparent caption pacing and fixed-duration typing for an e2e test. */
 export function configureVideoCaptions(page: Page, testInfo: TestInfo): void {
   enableSlowTyping(page, CAPTION_TYPING_DURATION_MS);
   if (CAPTION_PACE_MS > 0) {

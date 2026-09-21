@@ -26,7 +26,7 @@ let installed = false;
 
 /**
  * Replaces Locator.fill with sequential typing over a fixed duration for the
- * current worker.
+ * current e2e worker.
  * This is installed from a fixture hook, so test authors continue using the
  * regular Locator.fill API.
  */
