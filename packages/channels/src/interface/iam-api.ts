@@ -60,6 +60,19 @@ export interface CreateClusterRoleForUserRequest {
   name: string;
 }
 
+/** Grants an existing Role or ClusterRole to one user through a new binding. */
+export interface AssignExistingRoleToUserRequest {
+  username: string;
+  roleKind: 'Role' | 'ClusterRole';
+  roleName: string;
+  /** The name of the new binding. */
+  bindingName: string;
+  /** Required for a Role and for a namespace-scoped ClusterRole grant. */
+  namespace?: string;
+  /** ClusterRoles can be granted through either kind of binding. */
+  scope: 'namespace' | 'cluster';
+}
+
 export interface AddRoleRulesRequest {
   namespace: string;
   name: string;
@@ -140,6 +153,13 @@ export interface IamApi {
    * and a ClusterRoleBinding granting it to the user.
    */
   createClusterRoleForUser(request: CreateClusterRoleForUserRequest): Promise<void>;
+
+  /**
+   * Creates a new binding for an existing role without changing that role or any existing
+   * binding. A Role is namespace-scoped; a ClusterRole may be granted cluster-wide or in
+   * one namespace.
+   */
+  assignExistingRoleToUser(request: AssignExistingRoleToUserRequest): Promise<void>;
 
   /**
    * Revokes from the user the role a binding grants it, asking the operator to confirm first.

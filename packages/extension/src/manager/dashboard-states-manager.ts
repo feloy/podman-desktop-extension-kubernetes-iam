@@ -164,14 +164,18 @@ export class DashboardStatesManager implements Disposable {
     this.#resourceSubscriptions.push(
       this.#subscriber.onResourceUpdate({ resourceName: 'roles' }, event => {
         this.setRoles({
-          roles: event.resources.flatMap(r => r.items.map(item => toRoleInfo(item))),
+          roles: event.resources.flatMap(r =>
+            r.resourceName === 'roles' ? r.items.map(item => toRoleInfo(item)) : [],
+          ),
         });
       }),
     );
     this.#resourceSubscriptions.push(
       this.#subscriber.onResourceUpdate({ resourceName: 'clusterroles' }, event => {
         this.setClusterRoles({
-          clusterRoles: event.resources.flatMap(r => r.items.map(item => toClusterRoleInfo(item))),
+          clusterRoles: event.resources.flatMap(r =>
+            r.resourceName === 'clusterroles' ? r.items.map(item => toClusterRoleInfo(item)) : [],
+          ),
         });
       }),
     );
@@ -179,7 +183,7 @@ export class DashboardStatesManager implements Disposable {
       this.#subscriber.onResourceUpdate({ resourceName: 'rolebindings' }, event => {
         this.setRoleBindings({
           roleBindings: event.resources.flatMap(r =>
-            r.items.filter(item => item.kind === 'RoleBinding').map(item => toRoleBindingInfo(item)),
+            r.resourceName === 'rolebindings' ? r.items.map(item => toRoleBindingInfo(item)) : [],
           ),
         });
       }),
@@ -188,7 +192,7 @@ export class DashboardStatesManager implements Disposable {
       this.#subscriber.onResourceUpdate({ resourceName: 'clusterrolebindings' }, event => {
         this.setClusterRoleBindings({
           clusterRoleBindings: event.resources.flatMap(r =>
-            r.items.filter(item => item.kind === 'ClusterRoleBinding').map(item => toClusterRoleBindingInfo(item)),
+            r.resourceName === 'clusterrolebindings' ? r.items.map(item => toClusterRoleBindingInfo(item)) : [],
           ),
         });
       }),

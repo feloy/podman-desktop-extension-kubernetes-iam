@@ -45,8 +45,13 @@ const E2E_USER_NAME: string = 'e2e-user';
 const E2E_USER_CONTEXT_NAME: string = `envtest-${E2E_USER_NAME}`;
 const E2E_ROLE_NAME: string = 'e2e-pod-reader';
 const E2E_CLUSTER_ROLE_NAME: string = 'e2e-node-reader';
+const E2E_EXISTING_ROLE_NAME: string = 'e2e-existing-pod-reader';
+const E2E_EXISTING_CLUSTER_ROLE_NAME: string = 'e2e-existing-node-reader';
 const E2E_ROLE_NAMESPACE: string = 'default';
 const E2E_SECOND_ROLE_NAMESPACE: string = 'kube-system';
+const E2E_EXISTING_ROLE_BINDING_NAME: string = 'e2e-existing-pod-reader-binding';
+const E2E_EXISTING_CLUSTER_ROLE_BINDING_NAME: string = 'e2e-existing-node-reader-binding';
+const E2E_EXISTING_CLUSTER_ROLE_NAMESPACE_BINDING_NAME: string = 'e2e-existing-node-reader-namespaced-binding';
 const USER1_CLUSTER_ROLE_BINDING_NAME: string = 'user1-cluster-admin';
 const USER1_SECOND_CLUSTER_ROLE_BINDING_NAME: string = 'user1-cluster-admin-second';
 const SECOND_CONTEXT_NAME: string = 'envtest-secondary';
@@ -196,6 +201,20 @@ function createClusterRoleBindingForUser(
       stdio: 'pipe',
     },
   );
+}
+
+function createExistingRole(kubeconfigPath: string, name: string, namespace: string): void {
+  execFileSync(kubectlBinary(), ['create', 'role', name, '--verb=get', '--resource=pods', `--namespace=${namespace}`], {
+    env: { ...process.env, KUBECONFIG: kubeconfigPath },
+    stdio: 'pipe',
+  });
+}
+
+function createExistingClusterRole(kubeconfigPath: string, name: string): void {
+  execFileSync(kubectlBinary(), ['create', 'clusterrole', name, '--verb=get', '--resource=nodes'], {
+    env: { ...process.env, KUBECONFIG: kubeconfigPath },
+    stdio: 'pipe',
+  });
 }
 
 test.use({
@@ -607,6 +626,80 @@ test.describe.serial(`Extension usage`, { tag: '@integration' }, () => {
       await playExpect(usersPage.heading).toBeVisible();
     });
 
+    test('Assign existing Role and ClusterRole grants to the user', async () => {
+      createExistingRole(ENVTEST_KUBECONFIG, E2E_EXISTING_ROLE_NAME, E2E_ROLE_NAMESPACE);
+      createExistingClusterRole(ENVTEST_KUBECONFIG, E2E_EXISTING_CLUSTER_ROLE_NAME);
+
+      const usersPage = new UsersPage(webview);
+      const details = await usersPage.openUser(E2E_USER_NAME);
+      const dialog = webview.getByRole('dialog', { name: 'Assign existing role' });
+      await playExpect(details.heading).toBeVisible({ timeout: 30_000 });
+
+      await recordedStep('Assign an existing namespaced Role', async () => {
+        await details.assignExistingRoleButton.click();
+        await playExpect(dialog).toBeVisible();
+        await dialog.locator('#grant-namespace').click();
+        await dialog.getByRole('button', { name: E2E_ROLE_NAMESPACE, exact: true }).click();
+        await dialog.locator('#existing-role').click();
+        await dialog.getByRole('button', { name: E2E_EXISTING_ROLE_NAME, exact: true }).click();
+        await dialog.getByRole('textbox', { name: 'Binding name' }).fill(E2E_EXISTING_ROLE_BINDING_NAME);
+        await dialog.getByRole('button', { name: 'Assign role', exact: true }).click();
+        playExpect(
+          getKubernetesResource(ENVTEST_KUBECONFIG, 'rolebinding', E2E_EXISTING_ROLE_BINDING_NAME, E2E_ROLE_NAMESPACE),
+          'The existing Role is assigned through a RoleBinding',
+        ).toMatchObject({
+          roleRef: { kind: 'Role', name: E2E_EXISTING_ROLE_NAME },
+          subjects: [{ kind: 'User', name: E2E_USER_NAME }],
+        });
+      });
+
+      await recordedStep('Assign an existing ClusterRole cluster-wide', async () => {
+        await details.assignExistingRoleButton.click();
+        await playExpect(dialog).toBeVisible();
+        await dialog.getByRole('radio', { name: 'ClusterRole', exact: true }).check();
+        await dialog.locator('#existing-role').click();
+        await dialog.getByRole('button', { name: E2E_EXISTING_CLUSTER_ROLE_NAME, exact: true }).click();
+        await dialog.getByRole('textbox', { name: 'Binding name' }).fill(E2E_EXISTING_CLUSTER_ROLE_BINDING_NAME);
+        await dialog.getByRole('button', { name: 'Assign role', exact: true }).click();
+        playExpect(
+          getKubernetesResource(ENVTEST_KUBECONFIG, 'clusterrolebinding', E2E_EXISTING_CLUSTER_ROLE_BINDING_NAME),
+          'The existing ClusterRole is assigned through a cluster-wide ClusterRoleBinding',
+        ).toMatchObject({
+          roleRef: { kind: 'ClusterRole', name: E2E_EXISTING_CLUSTER_ROLE_NAME },
+          subjects: [{ kind: 'User', name: E2E_USER_NAME }],
+        });
+      });
+
+      await recordedStep('Assign the ClusterRole in one namespace', async () => {
+        await details.assignExistingRoleButton.click();
+        await playExpect(dialog).toBeVisible();
+        await dialog.getByRole('radio', { name: 'ClusterRole', exact: true }).check();
+        await dialog.getByRole('radio', { name: 'One namespace', exact: true }).check();
+        await dialog.getByRole('textbox', { name: 'Namespace' }).fill(E2E_SECOND_ROLE_NAMESPACE);
+        await dialog.locator('#existing-role').click();
+        await dialog.getByRole('button', { name: E2E_EXISTING_CLUSTER_ROLE_NAME, exact: true }).click();
+        await dialog
+          .getByRole('textbox', { name: 'Binding name' })
+          .fill(E2E_EXISTING_CLUSTER_ROLE_NAMESPACE_BINDING_NAME);
+        await dialog.getByRole('button', { name: 'Assign role', exact: true }).click();
+        playExpect(
+          getKubernetesResource(
+            ENVTEST_KUBECONFIG,
+            'rolebinding',
+            E2E_EXISTING_CLUSTER_ROLE_NAMESPACE_BINDING_NAME,
+            E2E_SECOND_ROLE_NAMESPACE,
+          ),
+          'The existing ClusterRole is assigned through a namespaced RoleBinding',
+        ).toMatchObject({
+          roleRef: { kind: 'ClusterRole', name: E2E_EXISTING_CLUSTER_ROLE_NAME },
+          subjects: [{ kind: 'User', name: E2E_USER_NAME }],
+        });
+      });
+
+      await details.closeButton.click();
+      await playExpect(usersPage.heading).toBeVisible();
+    });
+
     test('Reject creating a role whose name already exists in the namespace', async () => {
       const usersPage = new UsersPage(webview);
       const details = await usersPage.openUser(E2E_USER_NAME);
@@ -785,7 +878,7 @@ test.describe.serial(`Extension usage`, { tag: '@integration' }, () => {
       await playExpect(details.heading).toBeVisible({ timeout: 30_000 });
 
       await recordedStep('Keep the pods/log rule after cancelling its removal', async () => {
-        await details.getRemoveRuleButton('pods/log').click();
+        await details.getRemoveRuleButton(E2E_ROLE_NAME, 'pods/log').click();
         const confirmation = mainPage.getByRole('dialog');
         await playExpect(confirmation, 'The rule-removal confirmation is displayed').toBeVisible();
         await playExpect(confirmation, 'The confirmation identifies the namespaced role').toContainText(
@@ -793,7 +886,7 @@ test.describe.serial(`Extension usage`, { tag: '@integration' }, () => {
         );
         await confirmation.getByRole('button', { name: 'Cancel', exact: true }).click();
         await playExpect(
-          details.getRemoveRuleButton('pods/log'),
+          details.getRemoveRuleButton(E2E_ROLE_NAME, 'pods/log'),
           'The pods/log rule remains after cancellation',
         ).toBeVisible();
       });
@@ -812,12 +905,12 @@ test.describe.serial(`Extension usage`, { tag: '@integration' }, () => {
       await playExpect(details.heading).toBeVisible({ timeout: 30_000 });
 
       await recordedStep('Remove the pods/log rule from the namespaced role', async () => {
-        await details.getRemoveRuleButton('pods/log').click();
+        await details.getRemoveRuleButton(E2E_ROLE_NAME, 'pods/log').click();
         const confirmation = mainPage.getByRole('dialog');
         await playExpect(confirmation, 'The rule-removal confirmation is displayed').toBeVisible();
         await confirmation.getByRole('button', { name: 'Remove', exact: true }).click();
         await playExpect(
-          details.getRemoveRuleButton('pods/log'),
+          details.getRemoveRuleButton(E2E_ROLE_NAME, 'pods/log'),
           'The pods/log rule is removed from the namespaced role',
         ).not.toBeVisible({ timeout: 30_000 });
       });
@@ -836,7 +929,7 @@ test.describe.serial(`Extension usage`, { tag: '@integration' }, () => {
       await playExpect(details.heading).toBeVisible({ timeout: 30_000 });
 
       await recordedStep('Remove the node rule from the cluster-scoped role', async () => {
-        await details.getRemoveRuleButton('nodes').click();
+        await details.getRemoveRuleButton(E2E_CLUSTER_ROLE_NAME, 'nodes').click();
         const confirmation = mainPage.getByRole('dialog');
         await playExpect(confirmation, 'The rule-removal confirmation is displayed').toBeVisible();
         await playExpect(confirmation, 'The confirmation identifies the cluster-scoped role').toContainText(
@@ -844,7 +937,7 @@ test.describe.serial(`Extension usage`, { tag: '@integration' }, () => {
         );
         await confirmation.getByRole('button', { name: 'Remove', exact: true }).click();
         await playExpect(
-          details.getRemoveRuleButton('nodes'),
+          details.getRemoveRuleButton(E2E_CLUSTER_ROLE_NAME, 'nodes'),
           'The node rule is removed from the cluster-scoped role',
         ).not.toBeVisible({ timeout: 30_000 });
       });

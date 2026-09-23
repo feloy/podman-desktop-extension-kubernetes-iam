@@ -323,6 +323,7 @@ describe('dashboard extension is installed after init (onDidChange)', () => {
           resourceName: 'roles',
           items: [
             {
+              kind: 'Role',
               metadata: { name: 'pod-reader', namespace: 'default' },
               rules: [{ apiGroups: [''], resources: ['pods'], verbs: ['get', 'list'] }],
             },
@@ -333,6 +334,35 @@ describe('dashboard extension is installed after init (onDidChange)', () => {
 
     expect(manager.getRoles().roles).toHaveLength(1);
     expect(manager.getRoles().roles[0]?.name).toBe('pod-reader');
+  });
+
+  test('keeps Roles out of the ClusterRole state', async () => {
+    manager = container.get(DashboardStatesManager);
+    manager.init();
+    await vi.waitFor(() => expect(manager.getSubscriber()).toBeDefined());
+    fireContextsHealth();
+
+    const clusterRolesCall = onResourceUpdateMock.mock.calls.find(
+      (call: unknown[]) => (call[0] as { resourceName: string }).resourceName === 'clusterroles',
+    );
+    assert(clusterRolesCall);
+    const listener = clusterRolesCall[1] as (event: {
+      resources: { contextName?: string; resourceName: string; items: readonly Record<string, unknown>[] }[];
+    }) => void;
+    listener({
+      resources: [
+        {
+          resourceName: 'clusterroles',
+          items: [{ kind: 'ClusterRole', metadata: { name: 'cluster-role1' } }],
+        },
+        {
+          resourceName: 'roles',
+          items: [{ kind: 'Role', metadata: { name: 'role1', namespace: 'default' } }],
+        },
+      ],
+    });
+
+    expect(manager.getClusterRoles().clusterRoles.map(role => role.name)).toEqual(['cluster-role1']);
   });
 });
 

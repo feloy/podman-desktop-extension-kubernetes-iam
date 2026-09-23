@@ -460,6 +460,108 @@ test('createClusterRoleForUser trims the names before applying them', async () =
   expect(binding.subjects).toEqual([{ apiGroup: 'rbac.authorization.k8s.io', kind: 'User', name: 'alice' }]);
 });
 
+test('assignExistingRoleToUser creates a RoleBinding without changing the Role', async () => {
+  container.get(DashboardStatesManager).setRoles({ roles: [{ namespace: 'payments', name: 'pod-reader', rules: [] }] });
+
+  await manager.assignExistingRoleToUser({
+    username: 'alice',
+    roleKind: 'Role',
+    roleName: 'pod-reader',
+    bindingName: 'alice-pod-reader',
+    namespace: 'payments',
+    scope: 'namespace',
+  });
+
+  expect(telemetryLoggerMock.logUsage).toHaveBeenCalledWith('assignExistingRoleToUser');
+  expect(appliedManifest()).toEqual({
+    apiVersion: 'rbac.authorization.k8s.io/v1',
+    kind: 'RoleBinding',
+    metadata: { name: 'alice-pod-reader', namespace: 'payments' },
+    roleRef: { apiGroup: 'rbac.authorization.k8s.io', kind: 'Role', name: 'pod-reader' },
+    subjects: [ALICE],
+  });
+});
+
+test('assignExistingRoleToUser grants a ClusterRole through a cluster-wide ClusterRoleBinding', async () => {
+  container.get(DashboardStatesManager).setClusterRoles({ clusterRoles: [{ name: 'view', rules: [] }] });
+
+  await manager.assignExistingRoleToUser({
+    username: 'alice',
+    roleKind: 'ClusterRole',
+    roleName: 'view',
+    bindingName: 'alice-view',
+    scope: 'cluster',
+  });
+
+  expect(appliedManifest()).toMatchObject({
+    kind: 'ClusterRoleBinding',
+    metadata: { name: 'alice-view' },
+    roleRef: { apiGroup: 'rbac.authorization.k8s.io', kind: 'ClusterRole', name: 'view' },
+    subjects: [ALICE],
+  });
+});
+
+test('assignExistingRoleToUser grants a ClusterRole in one namespace through a RoleBinding', async () => {
+  container.get(DashboardStatesManager).setClusterRoles({ clusterRoles: [{ name: 'view', rules: [] }] });
+
+  await manager.assignExistingRoleToUser({
+    username: 'alice',
+    roleKind: 'ClusterRole',
+    roleName: 'view',
+    bindingName: 'alice-view',
+    namespace: 'payments',
+    scope: 'namespace',
+  });
+
+  expect(appliedManifest()).toMatchObject({
+    kind: 'RoleBinding',
+    metadata: { name: 'alice-view', namespace: 'payments' },
+    roleRef: { apiGroup: 'rbac.authorization.k8s.io', kind: 'ClusterRole', name: 'view' },
+    subjects: [ALICE],
+  });
+});
+
+test('assignExistingRoleToUser rejects duplicate grants and leaves other binding subjects untouched', async () => {
+  container.get(DashboardStatesManager).setClusterRoles({ clusterRoles: [{ name: 'view', rules: [] }] });
+  container.get(DashboardStatesManager).setRoleBindings({
+    roleBindings: [
+      {
+        namespace: 'payments',
+        name: 'shared-view',
+        roleRef: { apiGroup: 'rbac.authorization.k8s.io', kind: 'ClusterRole', name: 'view' },
+        subjects: [ALICE, { kind: 'User', name: 'bob' }],
+      },
+    ],
+  });
+
+  await expect(
+    manager.assignExistingRoleToUser({
+      username: 'alice',
+      roleKind: 'ClusterRole',
+      roleName: 'view',
+      bindingName: 'alice-view',
+      namespace: 'payments',
+      scope: 'namespace',
+    }),
+  ).rejects.toThrow('already has ClusterRole view in namespace payments');
+  expect(mockApi.patchResources).not.toHaveBeenCalled();
+});
+
+test('assignExistingRoleToUser propagates API failures', async () => {
+  container.get(DashboardStatesManager).setClusterRoles({ clusterRoles: [{ name: 'view', rules: [] }] });
+  vi.mocked(mockApi.patchResources).mockRejectedValueOnce(new Error('forbidden'));
+
+  await expect(
+    manager.assignExistingRoleToUser({
+      username: 'alice',
+      roleKind: 'ClusterRole',
+      roleName: 'view',
+      bindingName: 'alice-view',
+      scope: 'cluster',
+    }),
+  ).rejects.toThrow('forbidden');
+});
+
 test('addRulesToRole appends the rule to the rules the role already holds', async () => {
   container.get(DashboardStatesManager).setRoles({
     roles: [
