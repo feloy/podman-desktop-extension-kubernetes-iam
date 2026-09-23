@@ -28,6 +28,8 @@ import type {
   CreateClusterRoleForUserRequest,
   AddRoleRulesRequest,
   AddClusterRoleRulesRequest,
+  RemoveRoleRuleRequest,
+  RemoveClusterRoleRuleRequest,
   PolicyRuleInfo,
   GenerateKubeconfigRequest,
   GetUserDetailsRequest,
@@ -126,6 +128,22 @@ function checkedRules(rules: PolicyRuleInfo[]): PolicyRuleInfo[] {
     throw new Error('At least one rule is needed');
   }
   return rules.map(checkedRule);
+}
+
+/** A concise, operator-facing description of the single PolicyRule about to be removed. */
+function describeRule(rule: PolicyRuleInfo): string {
+  const details =
+    rule.nonResourceURLs && rule.nonResourceURLs.length > 0
+      ? [`Non-resource URLs: ${rule.nonResourceURLs.join(', ')}`]
+      : [
+          `API groups: ${(rule.apiGroups.length > 0 ? rule.apiGroups : ['']).map(group => group || 'core').join(', ')}`,
+          `Resources: ${rule.resources.join(', ')}`,
+        ];
+  details.push(`Verbs: ${rule.verbs.join(', ')}`);
+  if (rule.resourceNames && rule.resourceNames.length > 0) {
+    details.push(`Resource names: ${rule.resourceNames.join(', ')}`);
+  }
+  return details.map((detail, index) => `${index + 1}. ${detail}`).join('\n');
 }
 
 /** What the operator answered to the confirmation of a revocation. */
@@ -484,6 +502,79 @@ export class IamManager implements IamApi {
         rules,
       },
     ]);
+  }
+
+  async removeRuleFromRole(request: RemoveRoleRuleRequest): Promise<void> {
+    this.telemetryLogger.logUsage('removeRuleFromRole');
+    const name = request.name.trim();
+    const namespace = request.namespace.trim();
+    if (!isValidResourceName(name)) {
+      throw new Error(`Invalid role name: ${request.name}`);
+    }
+    if (!isValidNamespaceName(namespace)) {
+      throw new Error(`Invalid namespace: ${request.namespace}`);
+    }
+    const role = this.dashboardStatesManager.getRoles().roles.find(r => r.namespace === namespace && r.name === name);
+    if (!role) {
+      throw new Error(`No role named ${name} in namespace ${namespace}`);
+    }
+    const systemRole = name.startsWith('system:');
+    const roleDescription = systemRole ? 'a Kubernetes system Role' : `Role ${name}`;
+    const rules = await this.removeSelectedRule(role.rules, request.rule, roleDescription, systemRole);
+    if (!rules) return;
+
+    await this.applyManifests([
+      {
+        apiVersion: `${RBAC_API_GROUP}/v1`,
+        kind: 'Role',
+        metadata: { name, namespace },
+        rules,
+      },
+    ]);
+  }
+
+  async removeRuleFromClusterRole(request: RemoveClusterRoleRuleRequest): Promise<void> {
+    this.telemetryLogger.logUsage('removeRuleFromClusterRole');
+    const name = request.name.trim();
+    if (!isValidResourceName(name)) {
+      throw new Error(`Invalid cluster role name: ${request.name}`);
+    }
+    const clusterRole = this.dashboardStatesManager.getClusterRoles().clusterRoles.find(r => r.name === name);
+    if (!clusterRole) {
+      throw new Error(`No cluster role named ${name}`);
+    }
+    const roleDescription = name.startsWith('system:') ? 'a Kubernetes system ClusterRole' : `ClusterRole ${name}`;
+    const systemRole = name.startsWith('system:');
+    const rules = await this.removeSelectedRule(clusterRole.rules, request.rule, roleDescription, systemRole);
+    if (!rules) return;
+
+    await this.applyManifests([
+      {
+        apiVersion: `${RBAC_API_GROUP}/v1`,
+        kind: 'ClusterRole',
+        metadata: { name },
+        rules,
+      },
+    ]);
+  }
+
+  /** Confirms and removes one matching rule, retaining every other entry in its original order. */
+  private async removeSelectedRule(
+    rules: PolicyRuleInfo[],
+    selected: PolicyRuleInfo,
+    role: string,
+    systemRole = false,
+  ): Promise<PolicyRuleInfo[] | undefined> {
+    const index = rules.findIndex(rule => rulesEqual(rule, selected));
+    if (index === -1) {
+      throw new Error(`The selected rule no longer exists on ${role}`);
+    }
+    const message = systemRole
+      ? `WARNING: Remove this rule from ${role}? This is a built-in Kubernetes role that can be shared by multiple bindings. Removing this rule can affect multiple users and workloads.\n\n${describeRule(selected)}`
+      : `Remove this rule from ${role}? Only this rule will be removed; all other rules and role metadata remain unchanged.\n\n${describeRule(selected)}`;
+    const answer = await window.showWarningMessage(message, 'Cancel', 'Remove');
+    if (answer !== 'Remove') return undefined;
+    return rules.filter((_, ruleIndex) => ruleIndex !== index);
   }
 
   /**

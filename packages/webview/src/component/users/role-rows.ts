@@ -24,13 +24,15 @@ import type { RoleRowUI } from './RoleRowUI';
  * Empty apiGroups/resources must not be shown as `*` on a non-resource rule: that is how
  * cluster-admin's second rule would look like another `*.*` grant.
  */
-export function toRuleChildRow(rule: UserRolePolicyRule): RoleRowUI {
+export function toRuleChildRow(rule: UserRolePolicyRule, onRemoveRule?: () => void): RoleRowUI {
+  const actions = onRemoveRule === undefined ? {} : { onRemoveRule };
   if (rule.nonResourceURLs && rule.nonResourceURLs.length > 0) {
     return {
       name: 'non-resource',
       col2: rule.nonResourceURLs.join(', '),
       col3: rule.verbs.join(', '),
       col4: '',
+      ...actions,
     };
   }
   return {
@@ -38,5 +40,6 @@ export function toRuleChildRow(rule: UserRolePolicyRule): RoleRowUI {
     col2: rule.resources.join(', ') || '*',
     col3: rule.verbs.join(', '),
     col4: rule.resourceNames?.join(', ') ?? '',
+    ...actions,
   };
 }

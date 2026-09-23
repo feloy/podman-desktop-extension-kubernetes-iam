@@ -24,12 +24,16 @@
  */
 const RFC_1123_SUBDOMAIN = /^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$/;
 const RFC_1123_LABEL = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/;
+// Kubernetes' built-in RBAC objects use the `system:` prefix (for example,
+// `system:basic-user`). They are valid role names even though `:` is not part of an RFC 1123
+// subdomain.
+const SYSTEM_RBAC_NAME = /^system:[a-z0-9]([a-z0-9.-]*[a-z0-9])?$/;
 
 const MAX_SUBDOMAIN_LENGTH = 253;
 const MAX_LABEL_LENGTH = 63;
 
 export function isValidResourceName(name: string): boolean {
-  return name.length <= MAX_SUBDOMAIN_LENGTH && RFC_1123_SUBDOMAIN.test(name);
+  return name.length <= MAX_SUBDOMAIN_LENGTH && (RFC_1123_SUBDOMAIN.test(name) || SYSTEM_RBAC_NAME.test(name));
 }
 
 export function isValidNamespaceName(namespace: string): boolean {

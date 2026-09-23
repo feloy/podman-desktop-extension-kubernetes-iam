@@ -24,12 +24,13 @@ describe('isValidResourceName', () => {
     expect(isValidResourceName(name)).toBe(true);
   });
 
-  test.each(['', 'Pod-Reader', '-leading', 'trailing-', 'has space', 'system:admin', '../escape'])(
-    'rejects %s',
-    name => {
-      expect(isValidResourceName(name)).toBe(false);
-    },
-  );
+  test.each(['', 'Pod-Reader', '-leading', 'trailing-', 'has space', '../escape'])('rejects %s', name => {
+    expect(isValidResourceName(name)).toBe(false);
+  });
+
+  test('accepts Kubernetes built-in RBAC names', () => {
+    expect(isValidResourceName('system:basic-user')).toBe(true);
+  });
 
   test('rejects a name longer than 253 characters', () => {
     expect(isValidResourceName('a'.repeat(253))).toBe(true);

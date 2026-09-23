@@ -691,6 +691,112 @@ test('addRulesToClusterRole rejects a cluster role it does not know about', asyn
   ).rejects.toThrow('No cluster role named node-reader');
   expect(mockApi.patchResources).not.toHaveBeenCalled();
 });
+
+test('removeRuleFromRole confirms and applies only the rules that remain', async () => {
+  const kept = { apiGroups: ['apps'], resources: ['deployments'], verbs: ['get'] };
+  const removed = { apiGroups: [''], resources: ['pods'], verbs: ['get'] };
+  container.get(DashboardStatesManager).setRoles({
+    roles: [{ namespace: 'default', name: 'pod-reader', rules: [kept, removed] }],
+  });
+  vi.mocked(window.showWarningMessage).mockResolvedValue('Remove');
+
+  await manager.removeRuleFromRole({ namespace: 'default', name: 'pod-reader', rule: removed });
+
+  expect(telemetryLoggerMock.logUsage).toHaveBeenCalledWith('removeRuleFromRole');
+  expect(window.showWarningMessage).toHaveBeenCalledWith(
+    'Remove this rule from Role pod-reader? Only this rule will be removed; all other rules and role metadata remain unchanged.\n\n1. API groups: core\n2. Resources: pods\n3. Verbs: get',
+    'Cancel',
+    'Remove',
+  );
+  expect(appliedManifest()).toEqual({
+    apiVersion: 'rbac.authorization.k8s.io/v1',
+    kind: 'Role',
+    metadata: { name: 'pod-reader', namespace: 'default' },
+    rules: [kept],
+  });
+});
+
+test('removeRuleFromRole leaves the role unchanged when removal is cancelled', async () => {
+  const rule = { apiGroups: [''], resources: ['pods'], verbs: ['get'] };
+  container.get(DashboardStatesManager).setRoles({
+    roles: [{ namespace: 'default', name: 'pod-reader', rules: [rule] }],
+  });
+  vi.mocked(window.showWarningMessage).mockResolvedValue('Cancel');
+
+  await manager.removeRuleFromRole({ namespace: 'default', name: 'pod-reader', rule });
+
+  expect(mockApi.patchResources).not.toHaveBeenCalled();
+});
+
+test('removeRuleFromRole reports when the displayed rule is no longer present', async () => {
+  container.get(DashboardStatesManager).setRoles({
+    roles: [{ namespace: 'default', name: 'pod-reader', rules: [] }],
+  });
+
+  await expect(
+    manager.removeRuleFromRole({
+      namespace: 'default',
+      name: 'pod-reader',
+      rule: { apiGroups: [''], resources: ['pods'], verbs: ['get'] },
+    }),
+  ).rejects.toThrow('The selected rule no longer exists on Role pod-reader');
+
+  expect(window.showWarningMessage).not.toHaveBeenCalled();
+  expect(mockApi.patchResources).not.toHaveBeenCalled();
+});
+
+test('removeRuleFromRole warns when the namespaced role uses the system prefix', async () => {
+  const rule = { apiGroups: [''], resources: ['pods'], verbs: ['get'] };
+  container.get(DashboardStatesManager).setRoles({
+    roles: [{ namespace: 'default', name: 'system:pod-reader', rules: [rule] }],
+  });
+  vi.mocked(window.showWarningMessage).mockResolvedValue('Cancel');
+
+  await manager.removeRuleFromRole({ namespace: 'default', name: 'system:pod-reader', rule });
+
+  expect(vi.mocked(window.showWarningMessage).mock.calls[0][0]).toContain(
+    'WARNING: Remove this rule from a Kubernetes system Role?',
+  );
+});
+
+test('removeRuleFromClusterRole removes only the selected rule', async () => {
+  const kept = { apiGroups: [''], resources: ['nodes'], verbs: ['get'] };
+  const removed = { apiGroups: [''], resources: ['nodes'], verbs: ['list'] };
+  container.get(DashboardStatesManager).setClusterRoles({
+    clusterRoles: [{ name: 'node-reader', rules: [kept, removed] }],
+  });
+  vi.mocked(window.showWarningMessage).mockResolvedValue('Remove');
+
+  await manager.removeRuleFromClusterRole({ name: 'node-reader', rule: removed });
+
+  expect(telemetryLoggerMock.logUsage).toHaveBeenCalledWith('removeRuleFromClusterRole');
+  expect(appliedManifest()).toEqual({
+    apiVersion: 'rbac.authorization.k8s.io/v1',
+    kind: 'ClusterRole',
+    metadata: { name: 'node-reader' },
+    rules: [kept],
+  });
+});
+
+test('removeRuleFromClusterRole accepts a Kubernetes built-in role name', async () => {
+  const rule = { apiGroups: [''], resources: ['pods'], verbs: ['get'] };
+  container.get(DashboardStatesManager).setClusterRoles({
+    clusterRoles: [{ name: 'system:basic-user', rules: [rule] }],
+  });
+  vi.mocked(window.showWarningMessage).mockResolvedValue('Remove');
+
+  await manager.removeRuleFromClusterRole({ name: 'system:basic-user', rule });
+
+  expect(vi.mocked(window.showWarningMessage).mock.calls[0][0]).toContain(
+    'WARNING: Remove this rule from a Kubernetes system ClusterRole? This is a built-in Kubernetes role that can be shared by multiple bindings. Removing this rule can affect multiple users and workloads.',
+  );
+  expect(appliedManifest()).toMatchObject({
+    kind: 'ClusterRole',
+    metadata: { name: 'system:basic-user' },
+    rules: [],
+  });
+});
+
 const BOB: SubjectInfo = { apiGroup: 'rbac.authorization.k8s.io', kind: 'User', name: 'bob' };
 const DEVS: SubjectInfo = { apiGroup: 'rbac.authorization.k8s.io', kind: 'Group', name: 'devs' };
 const CI: SubjectInfo = { kind: 'ServiceAccount', name: 'ci', namespace: 'build' };

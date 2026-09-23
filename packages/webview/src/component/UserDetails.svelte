@@ -10,7 +10,7 @@ import { faPlusCircle } from '@fortawesome/free-solid-svg-icons';
 import { getContext, onDestroy, onMount } from 'svelte';
 import type { Unsubscriber } from 'svelte/store';
 import { router } from 'tinro';
-import type { UserDetailsData, IamApi } from '@kubernetes-iam/channels';
+import type { UserDetailsData, IamApi, UserRolePolicyRule } from '@kubernetes-iam/channels';
 import { API_IAM } from '@kubernetes-iam/channels';
 import { Remote } from '/@/remote/remote';
 import { States } from '/@/state/states';
@@ -31,6 +31,7 @@ const states = getContext<States>(States);
 let details: UserDetailsData | undefined = $state(undefined);
 let loading = $state(true);
 let error: string | undefined = $state(undefined);
+let actionError: string | undefined = $state(undefined);
 let roleDialogKind: 'Role' | 'ClusterRole' | undefined = $state(undefined);
 let ruleDialogRole: RoleRef | undefined = $state(undefined);
 
@@ -101,6 +102,26 @@ async function revoke(binding: BindingRef): Promise<void> {
   });
 }
 
+async function removeRule(role: RoleRef, rule: UserRolePolicyRule): Promise<void> {
+  actionError = undefined;
+  // Rules come from Svelte state and can therefore be reactive proxies, which cannot cross
+  // the RPC structured-clone boundary. Copy every array into a plain data object first.
+  const selectedRule: UserRolePolicyRule = {
+    apiGroups: [...rule.apiGroups],
+    resources: [...rule.resources],
+    verbs: [...rule.verbs],
+    ...(rule.resourceNames === undefined ? {} : { resourceNames: [...rule.resourceNames] }),
+    ...(rule.nonResourceURLs === undefined ? {} : { nonResourceURLs: [...rule.nonResourceURLs] }),
+  };
+  if (role.kind === 'ClusterRole') {
+    await remote.getProxy<IamApi>(API_IAM).removeRuleFromClusterRole({ name: role.name, rule: selectedRule });
+  } else {
+    await remote
+      .getProxy<IamApi>(API_IAM)
+      .removeRuleFromRole({ namespace: role.namespace ?? '', name: role.name, rule: selectedRule });
+  }
+}
+
 function toUI(d: UserDetailsData | undefined): RoleRowUI[] {
   if (!d) return [];
   return d.roles.map(r => {
@@ -117,7 +138,11 @@ function toUI(d: UserDetailsData | undefined): RoleRowUI[] {
       onRevoke: (): void => {
         revoke(binding).catch(console.error);
       },
-      children: r.rules.map(toRuleChildRow),
+      children: r.rules.map(rule =>
+        toRuleChildRow(rule, (): void => {
+          removeRule(role, rule).catch(e => (actionError = e instanceof Error ? e.message : String(e)));
+        }),
+      ),
     };
   });
 }
@@ -186,6 +211,10 @@ function goBack(): void {
         <span class="font-semibold">Type:</span>
         {details?.kind ?? ''}
       </div>
+
+      {#if actionError}
+        <p class="text-sm text-red-500 px-5">Error: {actionError}</p>
+      {/if}
 
       {#if loading}
         <p class="text-sm text-(--pd-content-text) px-5">Loading roles...</p>
