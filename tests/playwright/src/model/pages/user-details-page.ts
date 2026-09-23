@@ -45,4 +45,8 @@ export class UserDetailsPage extends DetailsPage {
   getAddRuleButton(roleName: string): Locator {
     return this.page.getByTitle(`Add rule to ${roleName}`);
   }
+
+  getRemoveRuleButton(resource: string): Locator {
+    return this.page.getByRole('row').filter({ hasText: resource }).getByTitle('Remove rule');
+  }
 }

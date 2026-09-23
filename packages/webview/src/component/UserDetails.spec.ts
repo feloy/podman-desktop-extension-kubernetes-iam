@@ -54,6 +54,8 @@ beforeEach(() => {
     createClusterRoleForUser: vi.fn().mockResolvedValue(undefined),
     addRulesToRole: vi.fn().mockResolvedValue(undefined),
     addRulesToClusterRole: vi.fn().mockResolvedValue(undefined),
+    removeRuleFromRole: vi.fn().mockResolvedValue(undefined),
+    removeRuleFromClusterRole: vi.fn().mockResolvedValue(undefined),
     refreshApiResources: vi.fn().mockResolvedValue(undefined),
     revokeRoleFromUser: vi.fn().mockResolvedValue(undefined),
   } as unknown as IamApi);
@@ -179,10 +181,11 @@ describe('UserDetails', () => {
     await renderDetails();
 
     await waitFor(() => expect(uiSvelte.Table).toHaveBeenCalled());
-    expect(lastRows()[0].children).toEqual([
+    expect(lastRows()[0].children).toMatchObject([
       { name: '*', col2: '*', col3: '*', col4: '' },
       { name: 'non-resource', col2: '*', col3: '*', col4: '' },
     ]);
+    expect(lastRows()[0].children?.every(row => row.onRemoveRule !== undefined)).toBe(true);
   });
 
   test('displays the roles of the user', async () => {
@@ -344,6 +347,60 @@ describe('UserDetails', () => {
       rules: [{ apiGroups: [''], resources: ['pods'], verbs: ['get'] }],
     });
     expect(remoteMocks.get(API_IAM).addRulesToRole).not.toHaveBeenCalled();
+  });
+
+  test('removes a rule from its namespaced role', async () => {
+    const rule = { apiGroups: [''], resources: ['pods'], verbs: ['get'] };
+    vi.mocked(remoteMocks.get(API_IAM).getUserDetails).mockResolvedValue({
+      name: 'alice',
+      kind: 'User',
+      roles: [
+        {
+          bindingName: 'rb1',
+          bindingKind: 'RoleBinding',
+          roleName: 'pod-reader',
+          roleKind: 'Role',
+          namespace: 'default',
+          rules: [rule],
+        },
+      ],
+    });
+    await renderDetails();
+
+    await waitFor(() => expect(uiSvelte.Table).toHaveBeenCalled());
+    lastRows()[0].children?.[0].onRemoveRule?.();
+    await waitFor(() => expect(remoteMocks.get(API_IAM).removeRuleFromRole).toHaveBeenCalled());
+
+    expect(remoteMocks.get(API_IAM).removeRuleFromRole).toHaveBeenCalledWith({
+      namespace: 'default',
+      name: 'pod-reader',
+      rule,
+    });
+  });
+
+  test('removes a rule from a cluster role and displays failures', async () => {
+    const rule = { apiGroups: [''], resources: ['nodes'], verbs: ['get'] };
+    vi.mocked(remoteMocks.get(API_IAM).removeRuleFromClusterRole).mockRejectedValue(new Error('Rule update failed'));
+    vi.mocked(remoteMocks.get(API_IAM).getUserDetails).mockResolvedValue({
+      name: 'alice',
+      kind: 'User',
+      roles: [
+        {
+          bindingName: 'rb1',
+          bindingKind: 'ClusterRoleBinding',
+          roleName: 'node-reader',
+          roleKind: 'ClusterRole',
+          rules: [rule],
+        },
+      ],
+    });
+    await renderDetails();
+
+    await waitFor(() => expect(uiSvelte.Table).toHaveBeenCalled());
+    lastRows()[0].children?.[0].onRemoveRule?.();
+    await waitFor(() => expect(screen.getByText('Error: Rule update failed')).toBeDefined());
+
+    expect(remoteMocks.get(API_IAM).removeRuleFromClusterRole).toHaveBeenCalledWith({ name: 'node-reader', rule });
   });
 
   test('emits one rule per API group when two groups are selected', async () => {

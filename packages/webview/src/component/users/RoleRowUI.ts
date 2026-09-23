@@ -54,4 +54,6 @@ export interface RoleRowUI {
   onAddRule?: () => void;
   /** Deletes the binding granting the role to the user, leaving the role itself in place. */
   onRevoke?: () => void;
+  /** Only set on a rule row; removes that single rule from its role. */
+  onRemoveRule?: () => void;
 }
