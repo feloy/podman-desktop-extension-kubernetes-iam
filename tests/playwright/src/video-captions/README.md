@@ -1,7 +1,9 @@
 # E2E video captions
 
-This directory contains the reusable pieces that turn a Playwright e2e run
-into a paced, captioned recording. They are inactive for normal test runs.
+This directory turns a Playwright e2e run into a paced, captioned recording.
+It is designed to make the recorded video explain itself without adding video-
+specific helpers around every UI action. Captioning and pacing are disabled for
+normal e2e runs.
 
 ## Components
 
@@ -43,19 +45,20 @@ The recording script must export these variables for the test process:
 | `CAPTION_TYPING_DURATION_MS` | Total duration for each non-empty `.fill()` call. Set to `0` for normal fills.                         |
 | `VIDEO_RECORDING_STARTED_AT` | Epoch milliseconds captured immediately before recording begins, used to align subtitles and chapters. |
 
-## Test authoring
+## Write a recorded step
 
-Use regular Playwright locators. Inside `recordedStep`, `.click()`, `.check()`,
-`.uncheck()`, and `.fill()` are automatically captioned from the control's
-accessible label, title, name, placeholder, or text. Non-empty fills in that
-scope also use the configured fixed typing duration.
+`recordedStep` marks one meaningful, reviewer-facing business outcome. Put the
+UI actions that produce that outcome and the checks that verify it in the same
+block. Do not use it for setup, navigation, cleanup, or a single click.
 
-Interactions outside `recordedStep` are silent and keep their normal timing.
-This keeps setup, navigation, and cleanup out of the reviewer-facing narration.
-Normal e2e runs preserve their original timing everywhere.
+Import both helpers from the caption framework:
 
-Use `recordedStep` only for a meaningful, verified business outcome that is
-worth presenting to a reviewer:
+```ts
+import { expect, recordedStep } from './video-captions/runtime';
+```
+
+The recommended form has one named, final expectation. Its message says what
+is already visible on screen after the action succeeds:
 
 ```ts
 await recordedStep('Create the administrator user', async () => {
@@ -69,17 +72,44 @@ await recordedStep('Create the administrator user', async () => {
 });
 ```
 
-The caption starts after the callback succeeds, while the verified UI state is
-already visible. Verified outcome captions are green; automatically captioned
-interactions within the outcome are yellow. Avoid wrapping individual
-interactions in `recordedStep`: they are captioned automatically within the
-meaningful business outcome.
+The example produces yellow captions for the button click and text entry, then
+a green caption—“The newly created administrator user is listed”—once the final
+assertion passes. Each caption remains visible for `CAPTION_PACE_MS`.
 
-Import `expect` from this framework instead of the underlying fixture package.
-Inside a `recordedStep`, a custom expectation message is a final green caption
-and automatically receives the configured pacing. Unnamed expectations remain
-ordinary test checks; if no named expectation is used, the business-step name
-is shown instead.
+## Caption rules
+
+| Code                                                                     | Caption                                 | Colour | Timing                      |
+| ------------------------------------------------------------------------ | --------------------------------------- | ------ | --------------------------- |
+| `.click()`, `.check()`, `.uncheck()`, or `.fill()` inside `recordedStep` | The action and accessible control label | Yellow | After the interaction       |
+| `expect(value, 'message')` inside `recordedStep`                         | The custom expectation message          | Green  | After the assertion passes  |
+| `recordedStep('business outcome', ...)` with no named expectation        | The business-outcome text               | Green  | After the callback succeeds |
+| Any action or expectation outside `recordedStep`                         | None                                    | —      | No caption or added delay   |
+
+For a named expectation to produce a caption, import `expect` from
+`./video-captions/runtime`, not from the underlying Playwright fixture package.
+Unnamed expectations are still normal checks, but do not create a caption.
+
+### More than one named expectation
+
+Every named expectation inside a `recordedStep` produces its own green caption
+and its own pacing delay, in the order in which the expectations pass. The
+business-step fallback caption is not added when at least one named expectation
+is present.
+
+Use multiple named expectations only when each one verifies a distinct state a
+reviewer should have time to inspect. Usually, keep intermediate checks
+unnamed and give only the final, durable result a message. This keeps the video
+concise and ensures the final caption describes the state that remains on
+screen.
+
+```ts
+await recordedStep('Create the administrator user', async () => {
+  await page.getByRole('button', { name: 'Create user' }).click();
+  await expect(dialog).toBeVisible(); // Check only: no caption.
+  // …complete the dialog…
+  await expect(userRow, 'The newly created administrator user is listed').toBeVisible();
+});
+```
 
 ## Chapters
 
