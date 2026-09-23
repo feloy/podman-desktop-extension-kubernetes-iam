@@ -19,7 +19,7 @@
 import { afterEach, assert, beforeEach, describe, expect, test, vi } from 'vitest';
 import { DashboardStatesManager } from './dashboard-states-manager';
 import type { Disposable, ExtensionContext, TelemetryLogger } from '@podman-desktop/api';
-import { extensions } from '@podman-desktop/api';
+import { extensions, kubernetes } from '@podman-desktop/api';
 import type {
   ContextsHealthsInfo,
   KubernetesDashboardExtensionApi,
@@ -38,6 +38,7 @@ import type {
 } from '@kubernetes-iam/channels';
 
 let container: Container;
+let fireKubeconfigUpdate: () => void;
 
 const dashboardApiManagerMock: DashboardApiManager = {
   getApi: vi.fn(),
@@ -67,6 +68,10 @@ const UNREACHABLE_CONTEXTS_HEALTH: ContextsHealthsInfo = {
 
 beforeEach(async () => {
   vi.resetAllMocks();
+  vi.mocked(kubernetes.onDidUpdateKubeconfig).mockImplementation(listener => {
+    fireKubeconfigUpdate = (): void => listener({ type: 'UPDATE', location: {} } as never);
+    return { dispose: vi.fn() };
+  });
 
   const inversifyBinding = new InversifyBinding({} as RpcExtension, {} as ExtensionContext, {} as TelemetryLogger);
   container = await inversifyBinding.initBindings();
@@ -235,6 +240,25 @@ describe('dashboard extension is installed after init (onDidChange)', () => {
     fireContextsHealth();
     fireContextsHealth();
     expect(onResourceUpdateMock).toHaveBeenCalledTimes(4);
+  });
+
+  test('recreates resource subscriptions after a context switch', async () => {
+    manager = container.get(DashboardStatesManager);
+    manager.init();
+    await vi.waitFor(() => {
+      expect(manager.getSubscriber()).toBeDefined();
+    });
+    fireContextsHealth();
+    expect(onResourceUpdateMock).toHaveBeenCalledTimes(4);
+
+    fireKubeconfigUpdate();
+    expect(manager.getUsers()).toEqual({ users: [] });
+
+    // The dashboard emits health after it has selected and started monitoring the new context.
+    fireContextsHealth({
+      healths: [{ contextName: 'ctx2', checking: false, reachable: true, offline: false }],
+    });
+    expect(onResourceUpdateMock).toHaveBeenCalledTimes(8);
   });
 
   test('onResourceUpdate for rolebindings transforms and triggers recomputeUsers', async () => {

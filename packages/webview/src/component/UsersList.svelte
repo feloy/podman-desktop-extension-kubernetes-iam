@@ -1,4 +1,6 @@
 <script lang="ts">
+/* global Promise */
+
 import {
   Table,
   TableColumn,
@@ -72,6 +74,12 @@ const actionsColumn = new TableColumn<UserUI, UserUI>('Actions', {
 
 const columns = [nameColumn, typeColumn, actionsColumn];
 const row = new TableRow<UserUI>({ selectable: (): boolean => false });
+
+// Match the Dashboard resource lists: informer updates briefly report no items while a
+// context is changing, so wait before presenting an empty state to avoid a distracting flash.
+function waitThrottleDelay(): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, 500));
+}
 </script>
 
 <NavPage bind:searchTerm={searchTerm} title="Users">
@@ -91,7 +99,9 @@ const row = new TableRow<UserUI>({ selectable: (): boolean => false });
             searchTerm={searchTerm}
             on:resetFilter={(): string => (searchTerm = '')} />
         {:else}
-          <p class="text-sm text-(--pd-content-text)">No users found.</p>
+          {#await waitThrottleDelay() then _}
+            <p class="px-5 py-4 text-sm text-(--pd-content-text)">No users found.</p>
+          {/await}
         {/if}
       {/if}
     </div>

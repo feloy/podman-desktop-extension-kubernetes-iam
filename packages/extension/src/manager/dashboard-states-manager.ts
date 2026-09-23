@@ -16,7 +16,7 @@
  * SPDX-License-Identifier: Apache-2.0
  ***********************************************************************/
 
-import { Disposable, extensions } from '@podman-desktop/api';
+import { Disposable, extensions, kubernetes } from '@podman-desktop/api';
 import type {
   ContextsHealthsInfo,
   KubernetesDashboardSubscriber,
@@ -61,6 +61,9 @@ export class DashboardStatesManager implements Disposable {
   onContextsHealthChange: Event<ContextsHealthsInfo> = this.#onContextsHealthChange.event;
 
   #subscriptions: Disposable[] = [];
+  /** Resource subscriptions are bound to the context that was current when they were created. */
+  #resourceSubscriptions: Disposable[] = [];
+  #resourceResubscribeTimer: ReturnType<typeof setTimeout> | undefined;
   #subscriber: KubernetesDashboardSubscriber | undefined;
 
   #roles: RolesData = { roles: [] };
@@ -83,6 +86,11 @@ export class DashboardStatesManager implements Disposable {
     if (this.#connectToDashboard()) {
       didChangeSubscription.dispose();
     }
+
+    // The dashboard resolves an onResourceUpdate subscription without a contextName to the
+    // current context at subscription time. Recreate those subscriptions after a kubeconfig
+    // update so they follow a context switch instead of remaining attached to the old context.
+    this.#subscriptions.push(kubernetes.onDidUpdateKubeconfig(() => this.#invalidateResources()));
   }
 
   #connectToDashboard(): boolean {
@@ -117,27 +125,57 @@ export class DashboardStatesManager implements Disposable {
 
   #resourcesSubscribed = false;
 
+  #invalidateResources(): void {
+    if (!this.#resourcesSubscribed) {
+      return;
+    }
+
+    for (const subscription of this.#resourceSubscriptions) {
+      subscription.dispose();
+    }
+    this.#resourceSubscriptions = [];
+    this.#resourcesSubscribed = false;
+
+    // Do not display the previous context while the dashboard establishes informers for the
+    // newly selected one. The health event emitted after a context switch recreates the
+    // subscriptions once the dashboard has selected the new current context.
+    this.setRoles({ roles: [] });
+    this.setClusterRoles({ clusterRoles: [] });
+    this.setRoleBindings({ roleBindings: [] });
+    this.setClusterRoleBindings({ clusterRoleBindings: [] });
+
+    // A kubeconfig edit which leaves the current context unchanged does not necessarily emit a
+    // health event. Recreate in that case too, after the dashboard has processed the change.
+    clearTimeout(this.#resourceResubscribeTimer);
+    this.#resourceResubscribeTimer = setTimeout(() => {
+      this.#resourceResubscribeTimer = undefined;
+      this.#subscribeToResources();
+    }, 1_000);
+  }
+
   #subscribeToResources(): void {
     if (this.#resourcesSubscribed || !this.#subscriber) {
       return;
     }
+    clearTimeout(this.#resourceResubscribeTimer);
+    this.#resourceResubscribeTimer = undefined;
     this.#resourcesSubscribed = true;
 
-    this.#subscriptions.push(
+    this.#resourceSubscriptions.push(
       this.#subscriber.onResourceUpdate({ resourceName: 'roles' }, event => {
         this.setRoles({
           roles: event.resources.flatMap(r => r.items.map(item => toRoleInfo(item))),
         });
       }),
     );
-    this.#subscriptions.push(
+    this.#resourceSubscriptions.push(
       this.#subscriber.onResourceUpdate({ resourceName: 'clusterroles' }, event => {
         this.setClusterRoles({
           clusterRoles: event.resources.flatMap(r => r.items.map(item => toClusterRoleInfo(item))),
         });
       }),
     );
-    this.#subscriptions.push(
+    this.#resourceSubscriptions.push(
       this.#subscriber.onResourceUpdate({ resourceName: 'rolebindings' }, event => {
         this.setRoleBindings({
           roleBindings: event.resources.flatMap(r =>
@@ -146,7 +184,7 @@ export class DashboardStatesManager implements Disposable {
         });
       }),
     );
-    this.#subscriptions.push(
+    this.#resourceSubscriptions.push(
       this.#subscriber.onResourceUpdate({ resourceName: 'clusterrolebindings' }, event => {
         this.setClusterRoleBindings({
           clusterRoleBindings: event.resources.flatMap(r =>
@@ -158,6 +196,12 @@ export class DashboardStatesManager implements Disposable {
   }
 
   dispose(): void {
+    clearTimeout(this.#resourceResubscribeTimer);
+    this.#resourceResubscribeTimer = undefined;
+    for (const subscription of this.#resourceSubscriptions) {
+      subscription.dispose();
+    }
+    this.#resourceSubscriptions = [];
     for (const subscription of this.#subscriptions) {
       subscription.dispose();
     }

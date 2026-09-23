@@ -49,9 +49,12 @@ const E2E_ROLE_NAMESPACE: string = 'default';
 const E2E_SECOND_ROLE_NAMESPACE: string = 'kube-system';
 const USER1_CLUSTER_ROLE_BINDING_NAME: string = 'user1-cluster-admin';
 const USER1_SECOND_CLUSTER_ROLE_BINDING_NAME: string = 'user1-cluster-admin-second';
+const SECOND_CONTEXT_NAME: string = 'envtest-secondary';
+const SECOND_CONTEXT_USER_NAME: string = 'secondary-user';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const ENVTEST_PRIMARY_KUBECONFIG = path.resolve(__dirname, '..', '..', 'resources', 'envtest-primary-kubeconfig');
 const ENVTEST_KUBECONFIG = path.resolve(__dirname, '..', '..', 'resources', 'envtest-kubeconfig');
 const PODMAN_DESKTOP_KUBECONFIG = path.resolve(__dirname, '..', 'tests', 'playwright', 'resources', 'kube-config');
 const USER1_CLUSTER_ROLE_BINDING = path.resolve(__dirname, '..', '..', 'resources', 'user1-clusterrolebinding.yaml');
@@ -68,6 +71,12 @@ function kubectlBinary(): string {
 function applyUser1ClusterRoleBinding(kubeconfigPath: string): void {
   execFileSync(kubectlBinary(), ['apply', '-f', USER1_CLUSTER_ROLE_BINDING], {
     env: { ...process.env, KUBECONFIG: kubeconfigPath },
+    stdio: 'pipe',
+  });
+}
+
+function useContext(kubeconfigPath: string, contextName: string): void {
+  execFileSync(kubectlBinary(), ['config', 'use-context', contextName, '--kubeconfig', kubeconfigPath], {
     stdio: 'pipe',
   });
 }
@@ -277,11 +286,10 @@ test.describe(`Extension installation and verification`, { tag: '@integration' }
 test.describe(`Configure kubeconfig file`, { tag: '@integration' }, () => {
   test('Load kubeconfig file in Preferences', async ({ page, navigationBar }) => {
     // copy testing kubeconfig file to the expected location
-    const kubeConfigPathSrc = ENVTEST_KUBECONFIG;
     fs.mkdirSync(path.dirname(PODMAN_DESKTOP_KUBECONFIG), { recursive: true });
-    fs.copyFileSync(kubeConfigPathSrc, PODMAN_DESKTOP_KUBECONFIG);
+    fs.copyFileSync(ENVTEST_KUBECONFIG, PODMAN_DESKTOP_KUBECONFIG);
     // envtest --users only issues a client cert; IAM lists User subjects from bindings.
-    applyUser1ClusterRoleBinding(kubeConfigPathSrc);
+    applyUser1ClusterRoleBinding(ENVTEST_PRIMARY_KUBECONFIG);
 
     await recordedStep('Load the envtest kubeconfig file', async () => {
       const settingsBar = await navigationBar.openSettings();
@@ -308,6 +316,47 @@ test.describe.serial(`Extension usage`, { tag: '@integration' }, () => {
         await playExpect(usersPage.getUserButton('user1'), 'The seeded user is listed').toBeVisible({
           timeout: 60_000,
         });
+      });
+    });
+
+    test('Refreshes users after switching Kubernetes contexts', async () => {
+      const usersPage = new UsersPage(webview);
+      const statusBar = new StatusBar(mainPage);
+
+      async function selectContextFromStatusBar(contextName: string): Promise<void> {
+        await statusBar.kubernetesContext.click();
+        await mainPage.getByText(contextName, { exact: true }).click();
+        await statusBar.validateKubernetesContext(contextName);
+      }
+
+      await recordedStep('Switch to the secondary Kubernetes context', async () => {
+        useContext(PODMAN_DESKTOP_KUBECONFIG, SECOND_CONTEXT_NAME);
+        await statusBar.validateKubernetesContext(SECOND_CONTEXT_NAME);
+      });
+
+      await recordedStep('Display users from the newly selected context', async () => {
+        await playExpect(
+          usersPage.getUserButton(SECOND_CONTEXT_USER_NAME),
+          'The secondary context user is listed after switching contexts',
+        ).toBeVisible({ timeout: 60_000 });
+        await playExpect(
+          usersPage.getUserButton('user1'),
+          'The primary context user is no longer listed',
+        ).not.toBeVisible();
+      });
+
+      await recordedStep('Restore the primary Kubernetes context from the Status Bar', async () => {
+        await selectContextFromStatusBar('envtest');
+        await playExpect(
+          usersPage.getUserButton('user1'),
+          'The primary context user is listed after restoring with the Status Bar',
+        ).toBeVisible({
+          timeout: 60_000,
+        });
+        await playExpect(
+          usersPage.getUserButton(SECOND_CONTEXT_USER_NAME),
+          'The secondary context user is no longer listed after switching with the Status Bar',
+        ).not.toBeVisible();
       });
     });
 
