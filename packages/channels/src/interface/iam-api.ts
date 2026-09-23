@@ -71,6 +71,17 @@ export interface AddClusterRoleRulesRequest {
   rules: PolicyRuleInfo[];
 }
 
+export interface RemoveRoleRuleRequest {
+  namespace: string;
+  name: string;
+  rule: PolicyRuleInfo;
+}
+
+export interface RemoveClusterRoleRuleRequest {
+  name: string;
+  rule: PolicyRuleInfo;
+}
+
 export interface RevokeRoleFromUserRequest {
   username: string;
   /** `RoleBinding` or `ClusterRoleBinding`. */
@@ -148,6 +159,12 @@ export interface IamApi {
    * Appends rules to an existing ClusterRole in a single apply.
    */
   addRulesToClusterRole(request: AddClusterRoleRulesRequest): Promise<void>;
+
+  /** Removes one selected rule from an existing Role after confirmation. */
+  removeRuleFromRole(request: RemoveRoleRuleRequest): Promise<void>;
+
+  /** Removes one selected rule from an existing ClusterRole after confirmation. */
+  removeRuleFromClusterRole(request: RemoveClusterRoleRuleRequest): Promise<void>;
 
   /**
    * Starts a discovery pass of the API resources of the current context.

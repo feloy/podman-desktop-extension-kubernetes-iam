@@ -778,6 +778,84 @@ test.describe.serial(`Extension usage`, { tag: '@integration' }, () => {
       await details.closeButton.click();
       await playExpect(usersPage.heading).toBeVisible();
     });
+
+    test('Cancel removing a rule from a namespaced role', async () => {
+      const usersPage = new UsersPage(webview);
+      const details = await usersPage.openUser(E2E_USER_NAME);
+      await playExpect(details.heading).toBeVisible({ timeout: 30_000 });
+
+      await recordedStep('Keep the pods/log rule after cancelling its removal', async () => {
+        await details.getRemoveRuleButton('pods/log').click();
+        const confirmation = mainPage.getByRole('dialog');
+        await playExpect(confirmation, 'The rule-removal confirmation is displayed').toBeVisible();
+        await playExpect(confirmation, 'The confirmation identifies the namespaced role').toContainText(
+          `Remove this rule from Role ${E2E_ROLE_NAME}`,
+        );
+        await confirmation.getByRole('button', { name: 'Cancel', exact: true }).click();
+        await playExpect(
+          details.getRemoveRuleButton('pods/log'),
+          'The pods/log rule remains after cancellation',
+        ).toBeVisible();
+      });
+
+      playExpect(
+        resourceRules(getKubernetesResource(ENVTEST_KUBECONFIG, 'role', E2E_ROLE_NAME, E2E_ROLE_NAMESPACE)),
+      ).toContainEqual({ apiGroups: [''], resources: ['pods/log'], verbs: ['get'] });
+
+      await details.closeButton.click();
+      await playExpect(usersPage.heading).toBeVisible();
+    });
+
+    test('Remove a rule from a namespaced role', async () => {
+      const usersPage = new UsersPage(webview);
+      const details = await usersPage.openUser(E2E_USER_NAME);
+      await playExpect(details.heading).toBeVisible({ timeout: 30_000 });
+
+      await recordedStep('Remove the pods/log rule from the namespaced role', async () => {
+        await details.getRemoveRuleButton('pods/log').click();
+        const confirmation = mainPage.getByRole('dialog');
+        await playExpect(confirmation, 'The rule-removal confirmation is displayed').toBeVisible();
+        await confirmation.getByRole('button', { name: 'Remove', exact: true }).click();
+        await playExpect(
+          details.getRemoveRuleButton('pods/log'),
+          'The pods/log rule is removed from the namespaced role',
+        ).not.toBeVisible({ timeout: 30_000 });
+      });
+
+      playExpect(
+        resourceRules(getKubernetesResource(ENVTEST_KUBECONFIG, 'role', E2E_ROLE_NAME, E2E_ROLE_NAMESPACE)),
+      ).not.toContainEqual({ apiGroups: [''], resources: ['pods/log'], verbs: ['get'] });
+
+      await details.closeButton.click();
+      await playExpect(usersPage.heading).toBeVisible();
+    });
+
+    test('Remove a rule from a cluster-scoped role', async () => {
+      const usersPage = new UsersPage(webview);
+      const details = await usersPage.openUser(E2E_USER_NAME);
+      await playExpect(details.heading).toBeVisible({ timeout: 30_000 });
+
+      await recordedStep('Remove the node rule from the cluster-scoped role', async () => {
+        await details.getRemoveRuleButton('nodes').click();
+        const confirmation = mainPage.getByRole('dialog');
+        await playExpect(confirmation, 'The rule-removal confirmation is displayed').toBeVisible();
+        await playExpect(confirmation, 'The confirmation identifies the cluster-scoped role').toContainText(
+          `Remove this rule from ClusterRole ${E2E_CLUSTER_ROLE_NAME}`,
+        );
+        await confirmation.getByRole('button', { name: 'Remove', exact: true }).click();
+        await playExpect(
+          details.getRemoveRuleButton('nodes'),
+          'The node rule is removed from the cluster-scoped role',
+        ).not.toBeVisible({ timeout: 30_000 });
+      });
+
+      playExpect(
+        resourceRules(getKubernetesResource(ENVTEST_KUBECONFIG, 'clusterrole', E2E_CLUSTER_ROLE_NAME)),
+      ).toEqual([]);
+
+      await details.closeButton.click();
+      await playExpect(usersPage.heading).toBeVisible();
+    });
   });
 
   test.describe('Role cleanup', () => {

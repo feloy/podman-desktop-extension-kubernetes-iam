@@ -1,10 +1,14 @@
 <script lang="ts">
 import { Button } from '@podman-desktop/ui-svelte';
-import { faLinkSlash, faPlusCircle } from '@fortawesome/free-solid-svg-icons';
+import { faLinkSlash, faPlusCircle, faTrash } from '@fortawesome/free-solid-svg-icons';
 import type { RoleRowUI } from './RoleRowUI';
 
 const { object }: { object: RoleRowUI } = $props();
 </script>
+
+{#if object.onRemoveRule}
+  <Button title="Remove rule" icon={faTrash} type="link" onclick={object.onRemoveRule} />
+{/if}
 
 {#if object.role}
   {#if object.onAddRule}
