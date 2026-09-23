@@ -45,15 +45,31 @@ beforeEach(() => {
 });
 
 describe('UsersList', () => {
-  test('shows empty message when no data', () => {
-    render(UsersList);
-    expect(screen.getByText('No users found.')).toBeDefined();
+  test('delays the empty message while context data is arriving', async () => {
+    vi.useFakeTimers();
+    try {
+      render(UsersList);
+      expect(screen.queryByText('No users found.')).toBeNull();
+
+      await vi.advanceTimersByTimeAsync(499);
+      expect(screen.queryByText('No users found.')).toBeNull();
+
+      await vi.advanceTimersByTimeAsync(1);
+      expect(screen.getByText('No users found.')).toBeDefined();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
-  test('shows empty message when users array is empty', () => {
+  test('shows empty message when no data', async () => {
+    render(UsersList);
+    await expect(screen.findByText('No users found.')).resolves.toBeDefined();
+  });
+
+  test('shows empty message when users array is empty', async () => {
     usersStateMock.setData({ users: [] });
     render(UsersList);
-    expect(screen.getByText('No users found.')).toBeDefined();
+    await expect(screen.findByText('No users found.')).resolves.toBeDefined();
   });
 
   test('passes user data to Table component', () => {

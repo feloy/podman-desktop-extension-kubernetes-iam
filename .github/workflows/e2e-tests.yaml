@@ -139,8 +139,8 @@ jobs:
           KUBEBUILDER_ASSETS=$(setup-envtest use -p path)
           echo "KUBEBUILDER_ASSETS=$KUBEBUILDER_ASSETS" >> $GITHUB_OUTPUT
 
-      - name: run envtest-start to start the envtest cluster with 1 user user1
-        id: run-envtest
+      - name: Run primary envtest cluster
+        id: run-primary-envtest
         env:
           KUBEBUILDER_ASSETS: ${{ steps.setup-envtest.outputs.KUBEBUILDER_ASSETS }}
         shell: bash
@@ -153,18 +153,46 @@ jobs:
           echo "KUBECONFIG=$KUBECONFIG" >> $GITHUB_OUTPUT
           echo "KUBECONFIG_USER1=$KUBECONFIG_USER1" >> $GITHUB_OUTPUT
 
+      - name: Run secondary envtest cluster
+        id: run-secondary-envtest
+        env:
+          KUBEBUILDER_ASSETS: ${{ steps.setup-envtest.outputs.KUBEBUILDER_ASSETS }}
+        shell: bash
+        run: |
+          KUBECONFIG_SECOND='${{ runner.temp }}/envtest-kubeconfig-secondary'
+          envtest-start "$KUBECONFIG_SECOND" &
+          ENVTEST_SECOND_START_PID=$!
+          echo "ENVTEST_SECOND_START_PID=$ENVTEST_SECOND_START_PID" >> $GITHUB_OUTPUT
+          echo "KUBECONFIG_SECOND=$KUBECONFIG_SECOND" >> $GITHUB_OUTPUT
+
       - name: check cluster is accessible, should show a service named "kubernetes"
         env:
           KUBEBUILDER_ASSETS: ${{ steps.setup-envtest.outputs.KUBEBUILDER_ASSETS }}
-          KUBECONFIG: '${{ steps.run-envtest.outputs.KUBECONFIG }}'
+          KUBECONFIG: '${{ steps.run-primary-envtest.outputs.KUBECONFIG }}'
         shell: bash
         run: |
           "$KUBEBUILDER_ASSETS/kubectl" get all | grep "service/kubernetes"
 
+      - name: check secondary cluster is accessible
+        env:
+          KUBEBUILDER_ASSETS: ${{ steps.setup-envtest.outputs.KUBEBUILDER_ASSETS }}
+          KUBECONFIG: '${{ steps.run-secondary-envtest.outputs.KUBECONFIG_SECOND }}'
+        shell: bash
+        run: |
+          "$KUBEBUILDER_ASSETS/kubectl" get all | grep "service/kubernetes"
+
+      - name: Seed secondary cluster RBAC
+        env:
+          KUBEBUILDER_ASSETS: ${{ steps.setup-envtest.outputs.KUBEBUILDER_ASSETS }}
+          KUBECONFIG: '${{ steps.run-secondary-envtest.outputs.KUBECONFIG_SECOND }}'
+        shell: bash
+        run: |
+          "$KUBEBUILDER_ASSETS/kubectl" create clusterrolebinding secondary-user-cluster-admin --clusterrole=cluster-admin --user=secondary-user
+
       - name: Install test CRD
         env:
           KUBEBUILDER_ASSETS: ${{ steps.setup-envtest.outputs.KUBEBUILDER_ASSETS }}
-          KUBECONFIG: '${{ steps.run-envtest.outputs.KUBECONFIG }}'
+          KUBECONFIG: '${{ steps.run-primary-envtest.outputs.KUBECONFIG }}'
         shell: bash
         run: |
           "$KUBEBUILDER_ASSETS/kubectl" apply -f tests/resources/e2e-test-crd.yaml
@@ -183,38 +211,71 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y ffmpeg
 
+      - name: Merge envtest kubeconfig files
+        shell: bash
+        run: |
+          PRIMARY_KUBECONFIG_JSON=$(mktemp)
+          SECONDARY_KUBECONFIG_JSON=$(mktemp)
+          MERGED_KUBECONFIG_JSON=$(mktemp)
+          trap 'rm -f "$PRIMARY_KUBECONFIG_JSON" "$SECONDARY_KUBECONFIG_JSON" "$MERGED_KUBECONFIG_JSON"' EXIT
+          "$KUBEBUILDER_ASSETS/kubectl" config view --raw --flatten --kubeconfig "${KUBECONFIG}" -o json > "$PRIMARY_KUBECONFIG_JSON"
+          "$KUBEBUILDER_ASSETS/kubectl" config view --raw --flatten --kubeconfig "${KUBECONFIG_SECOND}" -o json |
+            jq '
+              .clusters |= map(.name = "envtest-secondary") |
+              .users |= map(.name = "envtest-secondary") |
+              .contexts |= map(.name = "envtest-secondary" | .context.cluster = "envtest-secondary" | .context.user = "envtest-secondary")
+            ' > "$SECONDARY_KUBECONFIG_JSON"
+          jq -s '
+            .[0] + {
+              clusters: (.[0].clusters + .[1].clusters),
+              users: (.[0].users + .[1].users),
+              contexts: (.[0].contexts + .[1].contexts),
+              "current-context": .[0]["current-context"]
+            }
+          ' "$PRIMARY_KUBECONFIG_JSON" "$SECONDARY_KUBECONFIG_JSON" > "$MERGED_KUBECONFIG_JSON"
+          "$KUBEBUILDER_ASSETS/kubectl" config view --raw --flatten --kubeconfig "$MERGED_KUBECONFIG_JSON" > ./tests/resources/envtest-kubeconfig
+          "$KUBEBUILDER_ASSETS/kubectl" config current-context --kubeconfig ./tests/resources/envtest-kubeconfig | grep -x envtest
+        env:
+          KUBEBUILDER_ASSETS: ${{ steps.setup-envtest.outputs.KUBEBUILDER_ASSETS }}
+          KUBECONFIG: ${{ steps.run-primary-envtest.outputs.KUBECONFIG }}
+          KUBECONFIG_SECOND: ${{ steps.run-secondary-envtest.outputs.KUBECONFIG_SECOND }}
+
       # Run tests
       - name: Run Integration tests
         shell: bash
         run: |
-          cp "${KUBECONFIG}" ./tests/resources/envtest-kubeconfig
+          cp "${KUBECONFIG}" ./tests/resources/envtest-primary-kubeconfig
           cp "${KUBECONFIG_USER1}" ./tests/resources/envtest-kubeconfig-user1
           pnpm ${{ matrix.test_command }}
         env:
           NODE_OPTIONS: --no-experimental-strip-types
           KUBEBUILDER_ASSETS: ${{ steps.setup-envtest.outputs.KUBEBUILDER_ASSETS }}
-          KUBECONFIG: ${{ steps.run-envtest.outputs.KUBECONFIG }}
-          KUBECONFIG_USER1: ${{ steps.run-envtest.outputs.KUBECONFIG_USER1 }}
+          KUBECONFIG: ${{ steps.run-primary-envtest.outputs.KUBECONFIG }}
+          KUBECONFIG_USER1: ${{ steps.run-primary-envtest.outputs.KUBECONFIG_USER1 }}
           DEBUGGING_PORT: 9222
           PODMAN_DESKTOP_BINARY: ${{ env.PODMAN_DESKTOP_BINARY }}
 
       - name: stop envtest cluster on non-macOS
         if: always() && runner.os != 'macOS'
         env:
-          ENVTEST_START_PID: ${{ steps.run-envtest.outputs.ENVTEST_START_PID }}
+          ENVTEST_START_PID: ${{ steps.run-primary-envtest.outputs.ENVTEST_START_PID }}
+          ENVTEST_SECOND_START_PID: ${{ steps.run-secondary-envtest.outputs.ENVTEST_SECOND_START_PID }}
         shell: bash
         # These commands are working on both Linux and Windows, change carefully
         run: |
           kill ${ENVTEST_START_PID}
+          kill ${ENVTEST_SECOND_START_PID}
           timeout 10s bash -c "while ps | grep envtest-start > /dev/null; do sleep 1; done"
 
       - name: stop envtest cluster on macOS
         if: always() && runner.os == 'macOS'
         env:
-          ENVTEST_START_PID: ${{ steps.run-envtest.outputs.ENVTEST_START_PID }}
+          ENVTEST_START_PID: ${{ steps.run-primary-envtest.outputs.ENVTEST_START_PID }}
+          ENVTEST_SECOND_START_PID: ${{ steps.run-secondary-envtest.outputs.ENVTEST_SECOND_START_PID }}
         shell: bash
         run: |
           kill ${ENVTEST_START_PID}
+          kill ${ENVTEST_SECOND_START_PID}
           brew install coreutils
           gtimeout 10s bash -c "while ps | grep envtest-start > /dev/null; do sleep 1; done"
 
