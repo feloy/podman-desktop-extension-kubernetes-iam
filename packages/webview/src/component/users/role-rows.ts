@@ -24,8 +24,8 @@ import type { RoleRowUI } from './RoleRowUI';
  * Empty apiGroups/resources must not be shown as `*` on a non-resource rule: that is how
  * cluster-admin's second rule would look like another `*.*` grant.
  */
-export function toRuleChildRow(rule: UserRolePolicyRule, onRemoveRule?: () => void): RoleRowUI {
-  const actions = onRemoveRule === undefined ? {} : { onRemoveRule };
+export function toRuleChildRow(rule: UserRolePolicyRule, onRemoveRule?: () => void, roleName?: string): RoleRowUI {
+  const actions = onRemoveRule === undefined ? {} : { onRemoveRule, removeRuleRoleName: roleName };
   if (rule.nonResourceURLs && rule.nonResourceURLs.length > 0) {
     return {
       name: 'non-resource',

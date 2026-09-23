@@ -6,7 +6,7 @@
 
 <script lang="ts">
 import { Table, TableColumn, TableRow, TableSimpleColumn, DetailsPage, Button } from '@podman-desktop/ui-svelte';
-import { faPlusCircle } from '@fortawesome/free-solid-svg-icons';
+import { faLink, faPlusCircle } from '@fortawesome/free-solid-svg-icons';
 import { getContext, onDestroy, onMount } from 'svelte';
 import type { Unsubscriber } from 'svelte/store';
 import { router } from 'tinro';
@@ -15,6 +15,7 @@ import { API_IAM } from '@kubernetes-iam/channels';
 import { Remote } from '/@/remote/remote';
 import { States } from '/@/state/states';
 import CreateRoleForUserDialog from './users/CreateRoleForUserDialog.svelte';
+import AssignExistingRoleDialog from './users/AssignExistingRoleDialog.svelte';
 import AddRuleDialog from './users/AddRuleDialog.svelte';
 import RoleActions from './users/RoleActions.svelte';
 import type { BindingRef, RoleRef, RoleRowUI } from './users/RoleRowUI';
@@ -33,6 +34,7 @@ let loading = $state(true);
 let error: string | undefined = $state(undefined);
 let actionError: string | undefined = $state(undefined);
 let roleDialogKind: 'Role' | 'ClusterRole' | undefined = $state(undefined);
+let assigningExistingRole = $state(false);
 let ruleDialogRole: RoleRef | undefined = $state(undefined);
 
 let subscribers: Unsubscriber[] = [];
@@ -139,9 +141,13 @@ function toUI(d: UserDetailsData | undefined): RoleRowUI[] {
         revoke(binding).catch(console.error);
       },
       children: r.rules.map(rule =>
-        toRuleChildRow(rule, (): void => {
-          removeRule(role, rule).catch(e => (actionError = e instanceof Error ? e.message : String(e)));
-        }),
+        toRuleChildRow(
+          rule,
+          (): void => {
+            removeRule(role, rule).catch(e => (actionError = e instanceof Error ? e.message : String(e)));
+          },
+          role.name,
+        ),
       ),
     };
   });
@@ -203,6 +209,7 @@ function goBack(): void {
       <Button icon={faPlusCircle} onclick={(): 'ClusterRole' => (roleDialogKind = 'ClusterRole')}>
         Add cluster role
       </Button>
+      <Button icon={faLink} onclick={(): boolean => (assigningExistingRole = true)}>Assign existing role</Button>
     </div>
   {/snippet}
   {#snippet contentSnippet()}
@@ -236,6 +243,15 @@ function goBack(): void {
     username={name}
     clusterScoped={roleDialogKind === 'ClusterRole'}
     onclose={(): undefined => (roleDialogKind = undefined)} />
+{/if}
+
+{#if assigningExistingRole}
+  <AssignExistingRoleDialog
+    username={name}
+    roles={states.stateRolesData.data?.roles ?? []}
+    clusterRoles={states.stateClusterRolesData.data?.clusterRoles ?? []}
+    assignedRoles={details?.roles ?? []}
+    onclose={(): boolean => (assigningExistingRole = false)} />
 {/if}
 
 {#if ruleDialogRole}

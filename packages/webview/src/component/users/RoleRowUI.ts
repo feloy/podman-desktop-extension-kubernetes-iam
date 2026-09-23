@@ -56,4 +56,6 @@ export interface RoleRowUI {
   onRevoke?: () => void;
   /** Only set on a rule row; removes that single rule from its role. */
   onRemoveRule?: () => void;
+  /** The role owning a rule row, used to distinguish its remove action from similarly named rules. */
+  removeRuleRoleName?: string;
 }

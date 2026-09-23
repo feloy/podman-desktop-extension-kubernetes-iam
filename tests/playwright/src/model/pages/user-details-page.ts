@@ -23,11 +23,16 @@ import { DetailsPage } from '@podman-desktop/tests-playwright';
 export class UserDetailsPage extends DetailsPage {
   readonly addRoleButton: Locator;
   readonly addClusterRoleButton: Locator;
+  readonly assignExistingRoleButton: Locator;
 
   constructor(page: Page, userName: string) {
     super(page, userName);
     this.addRoleButton = this.controlActions.getByRole('button', { name: 'Add role', exact: true });
     this.addClusterRoleButton = this.controlActions.getByRole('button', { name: 'Add cluster role' });
+    this.assignExistingRoleButton = this.controlActions.getByRole('button', {
+      name: 'Assign existing role',
+      exact: true,
+    });
   }
 
   getRoleRow(roleName: string): Locator {
@@ -46,7 +51,7 @@ export class UserDetailsPage extends DetailsPage {
     return this.page.getByTitle(`Add rule to ${roleName}`);
   }
 
-  getRemoveRuleButton(resource: string): Locator {
-    return this.page.getByRole('row').filter({ hasText: resource }).getByTitle('Remove rule');
+  getRemoveRuleButton(roleName: string, resource: string): Locator {
+    return this.page.getByTitle(`Remove ${resource} rule from ${roleName}`);
   }
 }

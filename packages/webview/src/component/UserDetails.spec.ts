@@ -52,6 +52,7 @@ beforeEach(() => {
     getUserDetails: vi.fn().mockResolvedValue({ name: 'alice', kind: 'User', roles: [] }),
     createRoleForUser: vi.fn().mockResolvedValue(undefined),
     createClusterRoleForUser: vi.fn().mockResolvedValue(undefined),
+    assignExistingRoleToUser: vi.fn().mockResolvedValue(undefined),
     addRulesToRole: vi.fn().mockResolvedValue(undefined),
     addRulesToClusterRole: vi.fn().mockResolvedValue(undefined),
     removeRuleFromRole: vi.fn().mockResolvedValue(undefined),
@@ -90,6 +91,14 @@ const NODES = apiResource('', 'nodes', { kind: 'Node', namespaced: false });
 async function renderDetails(): Promise<void> {
   render(UserDetails, { name: 'alice' });
   await waitFor(() => expect(remoteMocks.get(API_IAM).getUserDetails).toHaveBeenCalledWith({ userName: 'alice' }));
+}
+
+/** Chooses one item from the UI library's Dropdown component. */
+async function selectDropdown(id: string, option: string): Promise<void> {
+  const trigger = document.getElementById(id);
+  if (!trigger) throw new Error(`Dropdown ${id} not found`);
+  await fireEvent.click(trigger);
+  await fireEvent.click(screen.getByRole('button', { name: option }));
 }
 
 /**
@@ -280,6 +289,74 @@ describe('UserDetails', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'Create' }));
 
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Create role' })).toBeNull());
+  });
+
+  test('assigns an existing namespaced Role to the user', async () => {
+    rolesStateMock.setData({ roles: [{ namespace: 'payments', name: 'pod-reader', rules: [] }] });
+    await renderDetails();
+    await fireEvent.click(screen.getByRole('button', { name: 'Assign existing role' }));
+
+    await selectDropdown('grant-namespace', 'payments');
+    await selectDropdown('existing-role', 'pod-reader');
+    await fireEvent.input(screen.getByRole('textbox', { name: 'Binding name' }), {
+      target: { value: 'alice-pod-reader' },
+    });
+    await fireEvent.click(screen.getByRole('button', { name: 'Assign role' }));
+
+    expect(remoteMocks.get(API_IAM).assignExistingRoleToUser).toHaveBeenCalledWith({
+      username: 'alice',
+      roleKind: 'Role',
+      roleName: 'pod-reader',
+      bindingName: 'alice-pod-reader',
+      namespace: 'payments',
+      scope: 'namespace',
+    });
+  });
+
+  test('assigns a ClusterRole in one namespace', async () => {
+    clusterRolesStateMock.setData({ clusterRoles: [{ name: 'view', rules: [] }] });
+    await renderDetails();
+    await fireEvent.click(screen.getByRole('button', { name: 'Assign existing role' }));
+
+    await fireEvent.click(screen.getByRole('radio', { name: 'ClusterRole' }));
+    await fireEvent.click(screen.getByRole('radio', { name: 'One namespace' }));
+    await fireEvent.input(screen.getByRole('textbox', { name: 'Namespace' }), { target: { value: 'payments' } });
+    await selectDropdown('existing-role', 'view');
+    await fireEvent.input(screen.getByRole('textbox', { name: 'Binding name' }), { target: { value: 'alice-view' } });
+    await fireEvent.click(screen.getByRole('button', { name: 'Assign role' }));
+
+    expect(remoteMocks.get(API_IAM).assignExistingRoleToUser).toHaveBeenCalledWith({
+      username: 'alice',
+      roleKind: 'ClusterRole',
+      roleName: 'view',
+      bindingName: 'alice-view',
+      namespace: 'payments',
+      scope: 'namespace',
+    });
+  });
+
+  test('blocks a duplicate existing-role assignment before calling the API', async () => {
+    clusterRolesStateMock.setData({ clusterRoles: [{ name: 'view', rules: [] }] });
+    vi.mocked(remoteMocks.get(API_IAM).getUserDetails).mockResolvedValue({
+      name: 'alice',
+      kind: 'User',
+      roles: [
+        {
+          bindingName: 'view-binding',
+          bindingKind: 'ClusterRoleBinding',
+          roleKind: 'ClusterRole',
+          roleName: 'view',
+          rules: [],
+        },
+      ],
+    });
+    await renderDetails();
+    await fireEvent.click(screen.getByRole('button', { name: 'Assign existing role' }));
+    await fireEvent.click(screen.getByRole('radio', { name: 'ClusterRole' }));
+    await selectDropdown('existing-role', 'view');
+
+    expect(screen.getByText('This user already has this ClusterRole at the selected scope.')).toBeDefined();
+    expect((screen.getByRole('button', { name: 'Assign role' }) as HTMLButtonElement).disabled).toBe(true);
   });
 
   test('offers a rule action on the role rows only', async () => {

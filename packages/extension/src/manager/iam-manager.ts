@@ -26,6 +26,7 @@ import type {
   CreateUserRequest,
   CreateRoleForUserRequest,
   CreateClusterRoleForUserRequest,
+  AssignExistingRoleToUserRequest,
   AddRoleRulesRequest,
   AddClusterRoleRulesRequest,
   RemoveRoleRuleRequest,
@@ -161,6 +162,16 @@ interface RevocationInfo {
   namespace: string | undefined;
   /** Whether the revocation leaves the role granted by no binding at all. */
   orphansRole: boolean;
+}
+
+interface ExistingRoleGrant {
+  username: string;
+  roleKind: 'Role' | 'ClusterRole';
+  roleName: string;
+  bindingName: string;
+  namespace: string | undefined;
+  scope: 'namespace' | 'cluster';
+  bindingKind: 'RoleBinding' | 'ClusterRoleBinding';
 }
 
 /**
@@ -359,6 +370,124 @@ export class IamManager implements IamApi {
         subjects: [{ apiGroup: RBAC_API_GROUP, kind: 'User', name: username }],
       },
     ]);
+  }
+
+  async assignExistingRoleToUser(request: AssignExistingRoleToUserRequest): Promise<void> {
+    this.telemetryLogger.logUsage('assignExistingRoleToUser');
+    const grant = this.checkedExistingRoleGrant(request);
+    this.assertRoleExists(grant);
+    this.assertBindingAvailable(grant);
+    this.assertNotDuplicateGrant(grant);
+    await this.applyManifests([
+      {
+        apiVersion: `${RBAC_API_GROUP}/v1`,
+        kind: grant.bindingKind,
+        metadata:
+          grant.namespace === undefined
+            ? { name: grant.bindingName }
+            : { name: grant.bindingName, namespace: grant.namespace },
+        roleRef: { apiGroup: RBAC_API_GROUP, kind: grant.roleKind, name: grant.roleName },
+        subjects: [{ apiGroup: RBAC_API_GROUP, kind: 'User', name: grant.username }],
+      },
+    ]);
+  }
+
+  private checkedExistingRoleGrant(request: AssignExistingRoleToUserRequest): ExistingRoleGrant {
+    const username = this.checkedUsername(request.username);
+    const roleName = request.roleName.trim();
+    const bindingName = request.bindingName.trim();
+    if (request.roleKind !== 'Role' && request.roleKind !== 'ClusterRole') {
+      throw new Error(`Invalid role kind: ${request.roleKind}`);
+    }
+    const clusterRole = request.roleKind === 'ClusterRole';
+    if (!isValidResourceName(roleName)) {
+      throw new Error(`Invalid ${clusterRole ? 'cluster role' : 'role'} name: ${request.roleName}`);
+    }
+    if (!isValidResourceName(bindingName)) {
+      throw new Error(`Invalid binding name: ${request.bindingName}`);
+    }
+    if (request.scope !== 'namespace' && request.scope !== 'cluster') {
+      throw new Error(`Invalid grant scope: ${request.scope}`);
+    }
+    if (!clusterRole && request.scope !== 'namespace') {
+      throw new Error('A Role can only be granted in its namespace');
+    }
+    const namespace = request.namespace?.trim();
+    if (request.scope === 'namespace') {
+      if (!namespace || !isValidNamespaceName(namespace)) {
+        throw new Error(`Invalid namespace: ${request.namespace ?? ''}`);
+      }
+    } else if (namespace) {
+      throw new Error('A cluster-wide grant cannot have a namespace');
+    }
+    return {
+      username,
+      roleKind: request.roleKind,
+      roleName,
+      bindingName,
+      namespace,
+      scope: request.scope,
+      bindingKind: request.scope === 'cluster' ? 'ClusterRoleBinding' : 'RoleBinding',
+    };
+  }
+
+  private assertRoleExists(grant: ExistingRoleGrant): void {
+    const roleExists =
+      grant.roleKind === 'ClusterRole'
+        ? this.dashboardStatesManager.getClusterRoles().clusterRoles.some(role => role.name === grant.roleName)
+        : this.dashboardStatesManager
+            .getRoles()
+            .roles.some(role => role.namespace === grant.namespace && role.name === grant.roleName);
+    if (!roleExists) {
+      const where = grant.roleKind === 'ClusterRole' ? '' : ` in namespace ${grant.namespace}`;
+      throw new Error(`No ${grant.roleKind} named ${grant.roleName}${where}`);
+    }
+  }
+
+  private assertBindingAvailable(grant: ExistingRoleGrant): void {
+    const bindingTaken =
+      grant.bindingKind === 'ClusterRoleBinding'
+        ? this.dashboardStatesManager
+            .getClusterRoleBindings()
+            .clusterRoleBindings.some(binding => binding.name === grant.bindingName)
+        : this.dashboardStatesManager
+            .getRoleBindings()
+            .roleBindings.some(binding => binding.namespace === grant.namespace && binding.name === grant.bindingName);
+    if (bindingTaken) {
+      const where = grant.namespace ? ` in namespace ${grant.namespace}` : '';
+      throw new Error(`A ${grant.bindingKind} named ${grant.bindingName} already exists${where}`);
+    }
+  }
+
+  private assertNotDuplicateGrant(grant: ExistingRoleGrant): void {
+    const duplicate =
+      grant.scope === 'cluster'
+        ? this.dashboardStatesManager
+            .getClusterRoleBindings()
+            .clusterRoleBindings.some(binding => this.isDuplicateGrant(grant, binding.roleRef, binding.subjects))
+        : this.dashboardStatesManager
+            .getRoleBindings()
+            .roleBindings.some(binding =>
+              this.isDuplicateGrant(grant, binding.roleRef, binding.subjects, binding.namespace),
+            );
+    if (duplicate) {
+      const where = grant.scope === 'cluster' ? 'cluster-wide' : `in namespace ${grant.namespace}`;
+      throw new Error(`${grant.username} already has ${grant.roleKind} ${grant.roleName} ${where}`);
+    }
+  }
+
+  private isDuplicateGrant(
+    grant: ExistingRoleGrant,
+    roleRef: RoleRefInfo,
+    subjects: SubjectInfo[],
+    bindingNamespace?: string,
+  ): boolean {
+    return (
+      roleRef.kind === grant.roleKind &&
+      roleRef.name === grant.roleName &&
+      bindingNamespace === grant.namespace &&
+      subjects.some(subject => subject.kind === 'User' && subject.name === grant.username)
+    );
   }
 
   async revokeRoleFromUser(request: RevokeRoleFromUserRequest): Promise<void> {

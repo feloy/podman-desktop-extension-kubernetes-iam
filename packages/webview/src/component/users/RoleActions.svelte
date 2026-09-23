@@ -7,7 +7,11 @@ const { object }: { object: RoleRowUI } = $props();
 </script>
 
 {#if object.onRemoveRule}
-  <Button title="Remove rule" icon={faTrash} type="link" onclick={object.onRemoveRule} />
+  <Button
+    title={object.removeRuleRoleName ? `Remove ${object.col2} rule from ${object.removeRuleRoleName}` : 'Remove rule'}
+    icon={faTrash}
+    type="link"
+    onclick={object.onRemoveRule} />
 {/if}
 
 {#if object.role}
