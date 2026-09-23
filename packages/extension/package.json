@@ -11,6 +11,17 @@
   },
   "main": "./dist/main.js",
   "contributes": {
+    "configuration": {
+      "title": "Kubernetes IAM",
+      "properties": {
+        "kubernetes-iam.certificate-duration": {
+          "type": "number",
+          "default": 8760,
+          "minimum": 1,
+          "description": "Duration, in hours, of client certificates generated for Kubernetes users."
+        }
+      }
+    },
     "features": [
       "kubernetes-iam-manager"
     ]
