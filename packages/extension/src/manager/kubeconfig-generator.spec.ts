@@ -18,7 +18,7 @@
 
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import type { ExtensionContext, TelemetryLogger, Uri } from '@podman-desktop/api';
-import { process as pdProcess, kubernetes } from '@podman-desktop/api';
+import { configuration, process as pdProcess, kubernetes } from '@podman-desktop/api';
 import type { RpcExtension } from '@kubernetes-iam/rpc';
 import type { Container } from 'inversify';
 import { InversifyBinding } from '/@/inject/inversify-binding';
@@ -66,6 +66,9 @@ beforeEach(async () => {
   vi.mocked(mkdtemp).mockResolvedValue('/test-tmpdir/k8s-iam-test');
   vi.mocked(writeFile).mockResolvedValue();
   vi.mocked(rm).mockResolvedValue();
+  vi.mocked(configuration.getConfiguration).mockReturnValue({
+    get: vi.fn().mockReturnValue(365 * 24),
+  } as never);
 
   const inversifyBinding = new InversifyBinding({} as RpcExtension, {} as ExtensionContext, telemetryLoggerMock);
   container = await inversifyBinding.initBindings();
@@ -213,6 +216,15 @@ clusters:
 
       return (vi.mocked(mockApi.patchResources).mock.calls[0]?.[0] as string) ?? '';
     }
+
+    test('requests the configured certificate duration in hours', async () => {
+      vi.mocked(configuration.getConfiguration).mockReturnValue({
+        get: vi.fn().mockReturnValue(48),
+      } as never);
+
+      await expect(createCsr('alice')).resolves.toContain('expirationSeconds: 172800');
+      expect(configuration.getConfiguration).toHaveBeenCalledWith('kubernetes-iam');
+    });
 
     test('requests a one-year certificate by default', async () => {
       await expect(createCsr('alice')).resolves.toContain('expirationSeconds: 31536000');

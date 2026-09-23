@@ -78,6 +78,9 @@ const plugin = {
   process: {
     exec: vi.fn(),
   },
+  configuration: {
+    getConfiguration: vi.fn(),
+  },
   kubernetes: {
     onDidUpdateKubeconfig: vi.fn(),
     getKubeconfig: vi.fn(),

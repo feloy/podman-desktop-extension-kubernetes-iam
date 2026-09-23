@@ -51,6 +51,7 @@ const USER1_CLUSTER_ROLE_BINDING_NAME: string = 'user1-cluster-admin';
 const USER1_SECOND_CLUSTER_ROLE_BINDING_NAME: string = 'user1-cluster-admin-second';
 const SECOND_CONTEXT_NAME: string = 'envtest-secondary';
 const SECOND_CONTEXT_USER_NAME: string = 'secondary-user';
+const CERTIFICATE_DURATION_HOURS: number = 48;
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -154,6 +155,13 @@ function certificateSigningRequestIsApproved(kubeconfigPath: string, name: strin
   );
 }
 
+function certificateSigningRequestExpirationSeconds(kubeconfigPath: string, name: string): number | undefined {
+  const csr = getKubernetesResource(kubeconfigPath, 'certificatesigningrequest', name) as {
+    spec?: { expirationSeconds?: number };
+  };
+  return csr.spec?.expirationSeconds;
+}
+
 function setClusterRoleBindingUsers(kubeconfigPath: string, name: string, usernames: string[]): void {
   execFileSync(
     kubectlBinary(),
@@ -197,6 +205,7 @@ test.use({
      * For performance reasons, disable extensions which are not necessary for the e2e
      */
     customSettings: {
+      'kubernetes-iam.certificate-duration': CERTIFICATE_DURATION_HOURS,
       'extensions.disabled': [
         'podman-desktop.compose',
         'podman-desktop.docker',
@@ -457,6 +466,9 @@ test.describe.serial(`Extension usage`, { tag: '@integration' }, () => {
         throw new Error('Generated CSR was not found');
       }
       const generatedCsrName = csrName;
+      playExpect(certificateSigningRequestExpirationSeconds(ENVTEST_KUBECONFIG, generatedCsrName)).toBe(
+        CERTIFICATE_DURATION_HOURS * 3_600,
+      );
       await playExpect
         .poll(() => certificateSigningRequestIsApproved(ENVTEST_KUBECONFIG, generatedCsrName))
         .toBeTruthy();

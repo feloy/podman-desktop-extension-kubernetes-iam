@@ -17,7 +17,7 @@
  ***********************************************************************/
 
 import { inject, injectable } from 'inversify';
-import { process as pdProcess, kubernetes } from '@podman-desktop/api';
+import { configuration, process as pdProcess, kubernetes } from '@podman-desktop/api';
 import type { KubernetesDashboardExtensionApi } from '@podman-desktop/kubernetes-dashboard-extension-api';
 import { DashboardApiManager } from '/@/manager/dashboard-api-manager';
 import { DashboardStatesManager } from '/@/manager/dashboard-states-manager';
@@ -35,7 +35,7 @@ interface KubeconfigFile {
   [key: string]: unknown;
 }
 
-const SECONDS_PER_DAY = 86_400;
+const SECONDS_PER_HOUR = 3_600;
 
 /**
  * Lifetime requested for the generated client certificate.
@@ -44,7 +44,7 @@ const SECONDS_PER_DAY = 86_400;
  * with kind or minikube hand out year-long credentials. Matching that avoids
  * forcing a daily regeneration during local development.
  */
-const DEFAULT_EXPIRATION_SECONDS = 365 * SECONDS_PER_DAY;
+const DEFAULT_CERTIFICATE_DURATION_HOURS = 365 * 24;
 
 /** Kubernetes rejects a CertificateSigningRequest asking for less than 10 minutes. */
 const MIN_EXPIRATION_SECONDS = 600;
@@ -102,15 +102,16 @@ export class KubeconfigGenerator {
   /**
    * Lifetime to request for the certificate, in seconds.
    *
-   * The caller-supplied value wins over the default. A user-facing
-   * `contributes.configuration` setting would be read here as the fallback,
-   * in place of the constant; the bounds below already guard against a value
-   * the signer would reject.
+   * The caller-supplied value wins over the user-configured duration. The
+   * setting is expressed in hours, while Kubernetes expects seconds.
    */
   private resolveExpirationSeconds(requested?: number): number {
-    const value = requested ?? DEFAULT_EXPIRATION_SECONDS;
+    const certificateDurationHours = configuration
+      .getConfiguration('kubernetes-iam')
+      .get<number>('certificate-duration', DEFAULT_CERTIFICATE_DURATION_HOURS);
+    const value = requested ?? certificateDurationHours * SECONDS_PER_HOUR;
     if (!Number.isFinite(value)) {
-      return DEFAULT_EXPIRATION_SECONDS;
+      return DEFAULT_CERTIFICATE_DURATION_HOURS * SECONDS_PER_HOUR;
     }
     return Math.max(MIN_EXPIRATION_SECONDS, Math.floor(value));
   }
