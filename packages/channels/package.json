@@ -25,6 +25,6 @@
   },
   "devDependencies": {
     "@kubernetes-iam/rpc": "workspace:*",
-    "vite-plugin-dts": "^5.1.0"
+    "vite-plugin-dts": "^5.1.1"
   }
 }
