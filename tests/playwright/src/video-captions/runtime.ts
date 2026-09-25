@@ -76,6 +76,16 @@ export function configureVideoCaptions(page: Page, testInfo: TestInfo): void {
   }
 }
 
+/** Center an outcome in the recording before its viewer-facing expectation. */
+export async function frameForCaption(locator: Locator): Promise<void> {
+  if (CAPTION_PACE_MS <= 0 || !isInsideRecordedStep()) return;
+  await locator.scrollIntoViewIfNeeded();
+  await locator.evaluate(element =>
+    element.scrollIntoView({ behavior: 'instant', block: 'center', inline: 'nearest' }),
+  );
+  await playwrightExpect(locator).toBeInViewport();
+}
+
 /**
  * Captions common UI interactions without requiring annotations in each test.
  * This remains recording-only: normal e2e runs do not change their timing or

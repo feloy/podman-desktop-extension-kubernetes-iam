@@ -51,10 +51,10 @@ The recording script must export these variables for the test process:
 UI actions that produce that outcome and the checks that verify it in the same
 block. Do not use it for setup, navigation, cleanup, or a single click.
 
-Import both helpers from the caption framework:
+Import the helpers from the caption framework:
 
 ```ts
-import { expect, recordedStep } from './video-captions/runtime';
+import { expect, frameForCaption, recordedStep } from './video-captions/runtime';
 ```
 
 The recommended form has one named, final expectation. Its message says what
@@ -75,6 +75,11 @@ await recordedStep('Create the administrator user', async () => {
 The example produces yellow captions for the button click and text entry, then
 a green caption—“The newly created administrator user is listed”—once the final
 assertion passes. Each caption remains visible for `CAPTION_PACE_MS`.
+
+When the final assertion's target may be off-screen, call
+`frameForCaption(locator)` immediately before it. During paced recordings this
+centers the element and checks that it is in the viewport; normal runs are
+unchanged. For a disappearance assertion, frame a nearby surviving element.
 
 ## Caption rules
 

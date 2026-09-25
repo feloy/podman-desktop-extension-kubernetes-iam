@@ -28,7 +28,7 @@ import { PreferencesPage, RunnerOptions, StatusBar, test } from '@podman-desktop
 import { KubernetesIamDetailsPage } from './model/pages/iam-details-page';
 import type { UserDetailsPage } from './model/pages/user-details-page';
 import { UsersPage } from './model/pages/users-page';
-import { configureVideoCaptions, expect as playExpect, recordedStep } from './video-captions/runtime';
+import { configureVideoCaptions, expect as playExpect, frameForCaption, recordedStep } from './video-captions/runtime';
 import { handleWebview } from './utils/webviewHandler';
 
 const DASHBOARD_OCI_IMAGE =
@@ -341,6 +341,8 @@ test.describe.serial(`Extension usage`, { tag: '@integration' }, () => {
         const usersPage = new UsersPage(webview);
         await playExpect(usersPage.heading).toBeVisible({ timeout: 30_000 });
         await playExpect(usersPage.createUserButton).toBeVisible();
+        await playExpect(usersPage.getUserButton('user1')).toBeVisible({ timeout: 60_000 });
+        await frameForCaption(usersPage.getUserButton('user1'));
         await playExpect(usersPage.getUserButton('user1'), 'The seeded user is listed').toBeVisible({
           timeout: 60_000,
         });
@@ -363,6 +365,8 @@ test.describe.serial(`Extension usage`, { tag: '@integration' }, () => {
       });
 
       await recordedStep('Display users from the newly selected context', async () => {
+        await playExpect(usersPage.getUserButton(SECOND_CONTEXT_USER_NAME)).toBeVisible({ timeout: 60_000 });
+        await frameForCaption(usersPage.getUserButton(SECOND_CONTEXT_USER_NAME));
         await playExpect(
           usersPage.getUserButton(SECOND_CONTEXT_USER_NAME),
           'The secondary context user is listed after switching contexts',
@@ -375,6 +379,8 @@ test.describe.serial(`Extension usage`, { tag: '@integration' }, () => {
 
       await recordedStep('Restore the primary Kubernetes context from the Status Bar', async () => {
         await selectContextFromStatusBar('envtest');
+        await playExpect(usersPage.getUserButton('user1')).toBeVisible({ timeout: 60_000 });
+        await frameForCaption(usersPage.getUserButton('user1'));
         await playExpect(
           usersPage.getUserButton('user1'),
           'The primary context user is listed after restoring with the Status Bar',
@@ -410,6 +416,7 @@ test.describe.serial(`Extension usage`, { tag: '@integration' }, () => {
         const confirmation = mainPage.getByRole('dialog');
         await playExpect(confirmation).toBeVisible();
         await confirmation.getByRole('button', { name: 'Cancel', exact: true }).click();
+        await frameForCaption(roleRow);
         await playExpect(roleRow, 'user1 has the cluster-admin role').toBeVisible();
       });
       playExpect(
@@ -429,6 +436,7 @@ test.describe.serial(`Extension usage`, { tag: '@integration' }, () => {
         await dialog.getByRole('textbox', { name: 'User name' }).fill(E2E_USER_NAME);
         await dialog.getByRole('button', { name: 'Create', exact: true }).click();
         await playExpect(dialog).not.toBeVisible();
+        await frameForCaption(usersPage.getUserButton(E2E_USER_NAME));
         await playExpect(usersPage.getUserButton(E2E_USER_NAME), 'The newly created user is listed').toBeVisible({
           timeout: 30_000,
         });
@@ -505,14 +513,15 @@ test.describe.serial(`Extension usage`, { tag: '@integration' }, () => {
 
       const usersPage = new UsersPage(webview);
       const e2eUserDetails = await usersPage.openUser(E2E_USER_NAME);
-      await recordedStep('Verify cluster-admin is granted to e2e-user', () =>
-        playExpect(
+      await recordedStep('Verify cluster-admin is granted to e2e-user', async () => {
+        await frameForCaption(e2eUserDetails.getRoleRow('cluster-admin'));
+        await playExpect(
           e2eUserDetails.getRoleRow('cluster-admin'),
           'e2e-user is granted the cluster-admin role',
         ).toBeVisible({
           timeout: 30_000,
-        }),
-      );
+        });
+      });
       await e2eUserDetails.closeButton.click();
       await playExpect(usersPage.heading).toBeVisible();
 
@@ -590,6 +599,7 @@ test.describe.serial(`Extension usage`, { tag: '@integration' }, () => {
         await roleDialog.getByRole('textbox', { name: 'Namespace' }).fill(E2E_ROLE_NAMESPACE);
         await roleDialog.getByRole('button', { name: 'Create', exact: true }).click();
         await playExpect(roleDialog).not.toBeVisible();
+        await frameForCaption(details.getRoleRow(E2E_ROLE_NAME));
         await playExpect(details.getRoleRow(E2E_ROLE_NAME), 'The namespaced role is created').toBeVisible({
           timeout: 30_000,
         });
@@ -600,6 +610,7 @@ test.describe.serial(`Extension usage`, { tag: '@integration' }, () => {
         await clusterRoleDialog.getByRole('textbox', { name: 'Role name' }).fill(E2E_CLUSTER_ROLE_NAME);
         await clusterRoleDialog.getByRole('button', { name: 'Create', exact: true }).click();
         await playExpect(clusterRoleDialog).not.toBeVisible();
+        await frameForCaption(details.getRoleRow(E2E_CLUSTER_ROLE_NAME));
         await playExpect(details.getRoleRow(E2E_CLUSTER_ROLE_NAME), 'The cluster-scoped role is created').toBeVisible({
           timeout: 30_000,
         });
@@ -747,7 +758,10 @@ test.describe.serial(`Extension usage`, { tag: '@integration' }, () => {
         await roleDialog.getByRole('checkbox', { name: 'deployments', exact: true }).check();
         await roleDialog.getByRole('radio', { name: 'View', exact: true }).check();
         await roleDialog.getByRole('button', { name: 'Add rules', exact: true }).click();
-        await playExpect(roleDialog, 'The selected API-resource rules are added').not.toBeVisible();
+        await playExpect(roleDialog).not.toBeVisible();
+        const ruleRow = details.getRuleRow('apps');
+        await frameForCaption(ruleRow);
+        await playExpect(ruleRow, 'The selected API-resource rules are added').toBeVisible({ timeout: 30_000 });
       });
 
       playExpect(
@@ -782,7 +796,10 @@ test.describe.serial(`Extension usage`, { tag: '@integration' }, () => {
         await resourceNames.fill('pod-a');
         await resourceNames.press('Enter');
         await roleDialog.getByRole('button', { name: 'Add rules', exact: true }).click();
-        await playExpect(roleDialog, 'The rule limited to named pods is added').not.toBeVisible();
+        await playExpect(roleDialog).not.toBeVisible();
+        const ruleRow = details.getRuleRow('core').filter({ hasText: 'pod-a' });
+        await frameForCaption(ruleRow);
+        await playExpect(ruleRow, 'The rule limited to named pods is added').toBeVisible({ timeout: 30_000 });
       });
 
       playExpect(
@@ -809,7 +826,10 @@ test.describe.serial(`Extension usage`, { tag: '@integration' }, () => {
         await roleDialog.getByRole('checkbox', { name: 'pods/log', exact: true }).check();
         await roleDialog.getByRole('checkbox', { name: 'get', exact: true }).check();
         await roleDialog.getByRole('button', { name: 'Add rules', exact: true }).click();
-        await playExpect(roleDialog, 'The pods/log subresource rule is added').not.toBeVisible();
+        await playExpect(roleDialog).not.toBeVisible();
+        const ruleRow = details.getRuleRow('core').filter({ hasText: 'pods/log' });
+        await frameForCaption(ruleRow);
+        await playExpect(ruleRow, 'The pods/log subresource rule is added').toBeVisible({ timeout: 30_000 });
       });
 
       playExpect(
@@ -835,7 +855,10 @@ test.describe.serial(`Extension usage`, { tag: '@integration' }, () => {
         await roleDialog.getByRole('checkbox', { name: 'widgets', exact: true }).check();
         await roleDialog.getByRole('checkbox', { name: 'get', exact: true }).check();
         await roleDialog.getByRole('button', { name: 'Add rules', exact: true }).click();
-        await playExpect(roleDialog, 'The custom resource rule is added').not.toBeVisible();
+        await playExpect(roleDialog).not.toBeVisible();
+        const ruleRow = details.getRuleRow('testing.kubernetes-iam.io');
+        await frameForCaption(ruleRow);
+        await playExpect(ruleRow, 'The custom resource rule is added').toBeVisible({ timeout: 30_000 });
       });
 
       playExpect(
@@ -861,7 +884,10 @@ test.describe.serial(`Extension usage`, { tag: '@integration' }, () => {
         await clusterRoleDialog.getByRole('checkbox', { name: 'nodes', exact: true }).check();
         await clusterRoleDialog.getByRole('radio', { name: 'View', exact: true }).check();
         await clusterRoleDialog.getByRole('button', { name: 'Add rules', exact: true }).click();
-        await playExpect(clusterRoleDialog, 'The node rule is added to the cluster-scoped role').not.toBeVisible();
+        await playExpect(clusterRoleDialog).not.toBeVisible();
+        const ruleRow = details.getRuleRow('core').filter({ hasText: 'nodes' });
+        await frameForCaption(ruleRow);
+        await playExpect(ruleRow, 'The node rule is added to the cluster-scoped role').toBeVisible({ timeout: 30_000 });
       });
 
       playExpect(
@@ -885,6 +911,7 @@ test.describe.serial(`Extension usage`, { tag: '@integration' }, () => {
           `Remove this rule from Role ${E2E_ROLE_NAME}`,
         );
         await confirmation.getByRole('button', { name: 'Cancel', exact: true }).click();
+        await frameForCaption(details.getRemoveRuleButton(E2E_ROLE_NAME, 'pods/log'));
         await playExpect(
           details.getRemoveRuleButton(E2E_ROLE_NAME, 'pods/log'),
           'The pods/log rule remains after cancellation',
@@ -909,6 +936,7 @@ test.describe.serial(`Extension usage`, { tag: '@integration' }, () => {
         const confirmation = mainPage.getByRole('dialog');
         await playExpect(confirmation, 'The rule-removal confirmation is displayed').toBeVisible();
         await confirmation.getByRole('button', { name: 'Remove', exact: true }).click();
+        await frameForCaption(details.getRoleRow(E2E_ROLE_NAME));
         await playExpect(
           details.getRemoveRuleButton(E2E_ROLE_NAME, 'pods/log'),
           'The pods/log rule is removed from the namespaced role',
@@ -936,6 +964,7 @@ test.describe.serial(`Extension usage`, { tag: '@integration' }, () => {
           `Remove this rule from ClusterRole ${E2E_CLUSTER_ROLE_NAME}`,
         );
         await confirmation.getByRole('button', { name: 'Remove', exact: true }).click();
+        await frameForCaption(details.getRoleRow(E2E_CLUSTER_ROLE_NAME));
         await playExpect(
           details.getRemoveRuleButton(E2E_CLUSTER_ROLE_NAME, 'nodes'),
           'The node rule is removed from the cluster-scoped role',
