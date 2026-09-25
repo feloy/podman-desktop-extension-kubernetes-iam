@@ -93,6 +93,11 @@ unchanged. For a disappearance assertion, frame a nearby surviving element.
 For a named expectation to produce a caption, import `expect` from
 `./video-captions/runtime`, not from the underlying Playwright fixture package.
 Unnamed expectations are still normal checks, but do not create a caption.
+Always await a named expectation so its caption finishes before the next action
+or test starts. For synchronous matchers such as `toMatchObject`, use
+`await Promise.resolve(expect(value, 'message').toMatchObject(expected))` because
+Playwright types the matcher as returning `void` while the caption wrapper
+returns a promise.
 
 ### More than one named expectation
 

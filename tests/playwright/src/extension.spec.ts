@@ -655,13 +655,20 @@ test.describe.serial(`Extension usage`, { tag: '@integration' }, () => {
         await dialog.getByRole('button', { name: E2E_EXISTING_ROLE_NAME, exact: true }).click();
         await dialog.getByRole('textbox', { name: 'Binding name' }).fill(E2E_EXISTING_ROLE_BINDING_NAME);
         await dialog.getByRole('button', { name: 'Assign role', exact: true }).click();
-        playExpect(
-          getKubernetesResource(ENVTEST_KUBECONFIG, 'rolebinding', E2E_EXISTING_ROLE_BINDING_NAME, E2E_ROLE_NAMESPACE),
-          'The existing Role is assigned through a RoleBinding',
-        ).toMatchObject({
-          roleRef: { kind: 'Role', name: E2E_EXISTING_ROLE_NAME },
-          subjects: [{ kind: 'User', name: E2E_USER_NAME }],
-        });
+        await Promise.resolve(
+          playExpect(
+            getKubernetesResource(
+              ENVTEST_KUBECONFIG,
+              'rolebinding',
+              E2E_EXISTING_ROLE_BINDING_NAME,
+              E2E_ROLE_NAMESPACE,
+            ),
+            'The existing Role is assigned through a RoleBinding',
+          ).toMatchObject({
+            roleRef: { kind: 'Role', name: E2E_EXISTING_ROLE_NAME },
+            subjects: [{ kind: 'User', name: E2E_USER_NAME }],
+          }),
+        );
       });
 
       await recordedStep('Assign an existing ClusterRole cluster-wide', async () => {
@@ -672,13 +679,15 @@ test.describe.serial(`Extension usage`, { tag: '@integration' }, () => {
         await dialog.getByRole('button', { name: E2E_EXISTING_CLUSTER_ROLE_NAME, exact: true }).click();
         await dialog.getByRole('textbox', { name: 'Binding name' }).fill(E2E_EXISTING_CLUSTER_ROLE_BINDING_NAME);
         await dialog.getByRole('button', { name: 'Assign role', exact: true }).click();
-        playExpect(
-          getKubernetesResource(ENVTEST_KUBECONFIG, 'clusterrolebinding', E2E_EXISTING_CLUSTER_ROLE_BINDING_NAME),
-          'The existing ClusterRole is assigned through a cluster-wide ClusterRoleBinding',
-        ).toMatchObject({
-          roleRef: { kind: 'ClusterRole', name: E2E_EXISTING_CLUSTER_ROLE_NAME },
-          subjects: [{ kind: 'User', name: E2E_USER_NAME }],
-        });
+        await Promise.resolve(
+          playExpect(
+            getKubernetesResource(ENVTEST_KUBECONFIG, 'clusterrolebinding', E2E_EXISTING_CLUSTER_ROLE_BINDING_NAME),
+            'The existing ClusterRole is assigned through a cluster-wide ClusterRoleBinding',
+          ).toMatchObject({
+            roleRef: { kind: 'ClusterRole', name: E2E_EXISTING_CLUSTER_ROLE_NAME },
+            subjects: [{ kind: 'User', name: E2E_USER_NAME }],
+          }),
+        );
       });
 
       await recordedStep('Assign the ClusterRole in one namespace', async () => {
@@ -693,18 +702,20 @@ test.describe.serial(`Extension usage`, { tag: '@integration' }, () => {
           .getByRole('textbox', { name: 'Binding name' })
           .fill(E2E_EXISTING_CLUSTER_ROLE_NAMESPACE_BINDING_NAME);
         await dialog.getByRole('button', { name: 'Assign role', exact: true }).click();
-        playExpect(
-          getKubernetesResource(
-            ENVTEST_KUBECONFIG,
-            'rolebinding',
-            E2E_EXISTING_CLUSTER_ROLE_NAMESPACE_BINDING_NAME,
-            E2E_SECOND_ROLE_NAMESPACE,
-          ),
-          'The existing ClusterRole is assigned through a namespaced RoleBinding',
-        ).toMatchObject({
-          roleRef: { kind: 'ClusterRole', name: E2E_EXISTING_CLUSTER_ROLE_NAME },
-          subjects: [{ kind: 'User', name: E2E_USER_NAME }],
-        });
+        await Promise.resolve(
+          playExpect(
+            getKubernetesResource(
+              ENVTEST_KUBECONFIG,
+              'rolebinding',
+              E2E_EXISTING_CLUSTER_ROLE_NAMESPACE_BINDING_NAME,
+              E2E_SECOND_ROLE_NAMESPACE,
+            ),
+            'The existing ClusterRole is assigned through a namespaced RoleBinding',
+          ).toMatchObject({
+            roleRef: { kind: 'ClusterRole', name: E2E_EXISTING_CLUSTER_ROLE_NAME },
+            subjects: [{ kind: 'User', name: E2E_USER_NAME }],
+          }),
+        );
       });
 
       await details.closeButton.click();
