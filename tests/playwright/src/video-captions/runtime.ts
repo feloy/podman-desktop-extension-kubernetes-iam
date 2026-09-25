@@ -18,9 +18,9 @@
 
 import { AsyncLocalStorage } from 'node:async_hooks';
 
-import type { Locator, Page, TestInfo } from '@playwright/test';
+import type { Locator, Page, TestInfo, TestStepInfo } from '@playwright/test';
 
-import { expect as playwrightExpect, test } from '@podman-desktop/tests-playwright';
+import { expect as playwrightExpect, test as playwrightTest } from '@podman-desktop/tests-playwright';
 
 import { enableSlowTyping } from './slow-typing';
 
@@ -29,47 +29,66 @@ const CAPTION_TYPING_DURATION_MS = Number(process.env.CAPTION_TYPING_DURATION_MS
 const CAPTION_TIMEOUT_BUFFER_MS = 120_000;
 const OUTCOME_STEP_PREFIX = '[video-caption] ';
 const ACTION_STEP_PREFIX = '[video-action] ';
-const RECORDED_STEP_PREFIX = '[video-recorded-step] ';
 
 type LocatorPrototype = Pick<Locator, 'check' | 'click' | 'fill' | 'uncheck'>;
-type RecordedStepScope = { hasNamedExpectationCaption: boolean };
+type VideoCaptionScope = { hasNamedExpectationCaption: boolean };
 
 let automaticActionCaptionsInstalled = false;
-const recordedStepScope = new AsyncLocalStorage<RecordedStepScope>();
+const videoCaptionScope = new AsyncLocalStorage<VideoCaptionScope>();
+
+/**
+ * Keep Playwright's test API while recognizing steps explicitly marked for the
+ * recording. The marked callback needs an async scope so actions and named
+ * expectations can add their own captions and pacing.
+ */
+const captionedStep = new Proxy(playwrightTest.step, {
+  apply(target, thisArgument, argumentsList: unknown[]): unknown {
+    const [title, body, options] = argumentsList as Parameters<typeof playwrightTest.step>;
+    if (options?.params?.videoCaption !== true) {
+      return Reflect.apply(target, thisArgument, argumentsList);
+    }
+    return runVideoCaptionStep(title, body, options);
+  },
+});
+
+export const test: typeof playwrightTest = new Proxy(playwrightTest, {
+  get(target, property, receiver): unknown {
+    return property === 'step' ? captionedStep : Reflect.get(target, property, receiver);
+  },
+});
+
+async function runVideoCaptionStep<T>(
+  title: string,
+  body: (step: TestStepInfo) => T | Promise<T>,
+  options: Parameters<typeof playwrightTest.step>[2],
+): Promise<T> {
+  const scope: VideoCaptionScope = { hasNamedExpectationCaption: false };
+  const result = await playwrightTest.step(title, step => videoCaptionScope.run(scope, () => body(step)), options);
+  if (!scope.hasNamedExpectationCaption) {
+    await pauseForCaption();
+  }
+  return result;
+}
 
 /**
  * Playwright's `expect`, with an opt-in viewer-facing caption for a custom
- * expectation message inside a recorded step. The assertion keeps Playwright's
+ * expectation message inside a marked step. The assertion keeps Playwright's
  * native failure message and pauses only after it has succeeded.
  */
 export const expect = new Proxy(playwrightExpect, {
   apply(target, thisArgument, argumentsList: unknown[]): unknown {
     const expectation = Reflect.apply(target, thisArgument, argumentsList);
     const [, message] = argumentsList;
-    if (typeof message !== 'string' || !recordedStepScope.getStore()) {
+    if (typeof message !== 'string' || !videoCaptionScope.getStore()) {
       return expectation;
     }
     return captionedExpectation(expectation as object, message);
   },
 }) as typeof playwrightExpect;
 
-/**
- * Groups a meaningful, verified business outcome. A custom message passed to
- * an `expect` in this callback becomes the final viewer-facing caption.
- */
-export async function recordedStep<T>(caption: string, action: () => Promise<T>): Promise<T> {
-  const scope: RecordedStepScope = { hasNamedExpectationCaption: false };
-  const result = await test.step(`${RECORDED_STEP_PREFIX}${caption}`, () => recordedStepScope.run(scope, action));
-  if (!scope.hasNamedExpectationCaption) {
-    await test.step(`${OUTCOME_STEP_PREFIX}${caption}`, async () => undefined);
-    await pauseForCaption();
-  }
-  return result;
-}
-
 /** Configures transparent caption pacing and fixed-duration typing for an e2e test. */
 export function configureVideoCaptions(page: Page, testInfo: TestInfo): void {
-  enableSlowTyping(page, CAPTION_TYPING_DURATION_MS, isInsideRecordedStep);
+  enableSlowTyping(page, CAPTION_TYPING_DURATION_MS, isInsideVideoCaptionStep);
   if (CAPTION_PACE_MS > 0) {
     enableAutomaticActionCaptions(page);
     testInfo.setTimeout(testInfo.timeout + CAPTION_TIMEOUT_BUFFER_MS);
@@ -78,7 +97,7 @@ export function configureVideoCaptions(page: Page, testInfo: TestInfo): void {
 
 /** Center an outcome in the recording before its viewer-facing expectation. */
 export async function frameForCaption(locator: Locator): Promise<void> {
-  if (CAPTION_PACE_MS <= 0 || !isInsideRecordedStep()) return;
+  if (CAPTION_PACE_MS <= 0 || !isInsideVideoCaptionStep()) return;
   await locator.scrollIntoViewIfNeeded();
   await locator.evaluate(element =>
     element.scrollIntoView({ behavior: 'instant', block: 'center', inline: 'nearest' }),
@@ -103,25 +122,25 @@ function enableAutomaticActionCaptions(page: Page): void {
   const originalFill = prototype.fill;
 
   prototype.click = async function (this: Locator, options): Promise<void> {
-    if (!isInsideRecordedStep()) {
+    if (!isInsideVideoCaptionStep()) {
       return originalClick.call(this, options);
     }
     await recordedAction(`Click ${await controlLabel(this)}`, () => originalClick.call(this, options));
   };
   prototype.check = async function (this: Locator, options): Promise<void> {
-    if (!isInsideRecordedStep()) {
+    if (!isInsideVideoCaptionStep()) {
       return originalCheck.call(this, options);
     }
     await recordedAction(`Select ${await controlLabel(this)}`, () => originalCheck.call(this, options));
   };
   prototype.uncheck = async function (this: Locator, options): Promise<void> {
-    if (!isInsideRecordedStep()) {
+    if (!isInsideVideoCaptionStep()) {
       return originalUncheck.call(this, options);
     }
     await recordedAction(`Clear ${await controlLabel(this)}`, () => originalUncheck.call(this, options));
   };
   prototype.fill = async function (this: Locator, value: string, options): Promise<void> {
-    if (!isInsideRecordedStep()) {
+    if (!isInsideVideoCaptionStep()) {
       return originalFill.call(this, value, options);
     }
     await recordedAction(`Enter text in ${await controlLabel(this)}`, () => originalFill.call(this, value, options));
@@ -129,8 +148,8 @@ function enableAutomaticActionCaptions(page: Page): void {
   automaticActionCaptionsInstalled = true;
 }
 
-function isInsideRecordedStep(): boolean {
-  return recordedStepScope.getStore() !== undefined;
+function isInsideVideoCaptionStep(): boolean {
+  return videoCaptionScope.getStore() !== undefined;
 }
 
 function captionedExpectation(expectation: object, message: string): object {
@@ -152,17 +171,19 @@ async function captionedMatcher(
   argumentsList: unknown[],
   message: string,
 ): Promise<unknown> {
-  const scope = recordedStepScope.getStore();
+  const scope = videoCaptionScope.getStore();
   if (scope) {
     scope.hasNamedExpectationCaption = true;
   }
-  const result = await test.step(`${OUTCOME_STEP_PREFIX}${message}`, () => matcher.apply(target, argumentsList));
+  const result = await playwrightTest.step(`${OUTCOME_STEP_PREFIX}${message}`, () =>
+    matcher.apply(target, argumentsList),
+  );
   await pauseForCaption();
   return result;
 }
 
 async function recordedAction<T>(caption: string, action: () => Promise<T>): Promise<T> {
-  const result = await test.step(`${ACTION_STEP_PREFIX}${caption}`, action);
+  const result = await playwrightTest.step(`${ACTION_STEP_PREFIX}${caption}`, action);
   await pauseForCaption();
   return result;
 }

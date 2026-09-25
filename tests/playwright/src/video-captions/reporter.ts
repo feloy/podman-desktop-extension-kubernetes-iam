@@ -50,9 +50,8 @@ const GROUP_CHAPTER_SPACING_MS = 1;
 /**
  * Creates an ASS subtitle track for an e2e screen recording.
  *
- * Explicit, prefixed test steps become viewer-facing captions. Each step ends
- * only after its UI outcome has been verified, so the caption describes what
- * is already visible in the recording.
+ * Marked test steps and explicit action/expectation steps become viewer-facing
+ * captions. Each cue begins after the corresponding UI outcome is visible.
  */
 export default class VideoSubtitlesReporter implements Reporter {
   private readonly outputFile: string;
@@ -167,13 +166,27 @@ export default class VideoSubtitlesReporter implements Reporter {
   }
 
   private captionForStep(step: TestStep): Pick<Cue, 'text' | 'style'> | undefined {
-    if (step.category === 'test.step' && step.title.startsWith(OUTCOME_STEP_PREFIX)) {
+    if (step.category !== 'test.step' || step.error) {
+      return undefined;
+    }
+    if (step.title.startsWith(OUTCOME_STEP_PREFIX)) {
       return { text: step.title.slice(OUTCOME_STEP_PREFIX.length), style: 'Assertion' };
     }
-    if (step.category === 'test.step' && step.title.startsWith(ACTION_STEP_PREFIX)) {
+    if (step.title.startsWith(ACTION_STEP_PREFIX)) {
       return { text: step.title.slice(ACTION_STEP_PREFIX.length), style: 'Interaction' };
     }
+    if (step.params?.videoCaption === true && !this.hasNamedExpectationCaption(step)) {
+      return { text: step.title, style: 'Assertion' };
+    }
     return undefined;
+  }
+
+  private hasNamedExpectationCaption(step: TestStep): boolean {
+    return step.steps.some(
+      child =>
+        (child.category === 'test.step' && child.title.startsWith(OUTCOME_STEP_PREFIX)) ||
+        this.hasNamedExpectationCaption(child),
+    );
   }
 
   private offset(time: number): number {
