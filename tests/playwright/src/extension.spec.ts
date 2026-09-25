@@ -759,7 +759,7 @@ test.describe.serial(`Extension usage`, { tag: '@integration' }, () => {
         await roleDialog.getByRole('radio', { name: 'View', exact: true }).check();
         await roleDialog.getByRole('button', { name: 'Add rules', exact: true }).click();
         await playExpect(roleDialog).not.toBeVisible();
-        const ruleRow = details.getRuleRow('apps');
+        const ruleRow = details.getRuleRowForRole(E2E_ROLE_NAME, 'apps');
         await frameForCaption(ruleRow);
         await playExpect(ruleRow, 'The selected API-resource rules are added').toBeVisible({ timeout: 30_000 });
       });
@@ -797,7 +797,7 @@ test.describe.serial(`Extension usage`, { tag: '@integration' }, () => {
         await resourceNames.press('Enter');
         await roleDialog.getByRole('button', { name: 'Add rules', exact: true }).click();
         await playExpect(roleDialog).not.toBeVisible();
-        const ruleRow = details.getRuleRow('core').filter({ hasText: 'pod-a' });
+        const ruleRow = details.getRuleRowForRole(E2E_ROLE_NAME, 'core').filter({ hasText: 'pod-a' });
         await frameForCaption(ruleRow);
         await playExpect(ruleRow, 'The rule limited to named pods is added').toBeVisible({ timeout: 30_000 });
       });
@@ -827,7 +827,7 @@ test.describe.serial(`Extension usage`, { tag: '@integration' }, () => {
         await roleDialog.getByRole('checkbox', { name: 'get', exact: true }).check();
         await roleDialog.getByRole('button', { name: 'Add rules', exact: true }).click();
         await playExpect(roleDialog).not.toBeVisible();
-        const ruleRow = details.getRuleRow('core').filter({ hasText: 'pods/log' });
+        const ruleRow = details.getRuleRowForRole(E2E_ROLE_NAME, 'core').filter({ hasText: 'pods/log' });
         await frameForCaption(ruleRow);
         await playExpect(ruleRow, 'The pods/log subresource rule is added').toBeVisible({ timeout: 30_000 });
       });
@@ -856,7 +856,7 @@ test.describe.serial(`Extension usage`, { tag: '@integration' }, () => {
         await roleDialog.getByRole('checkbox', { name: 'get', exact: true }).check();
         await roleDialog.getByRole('button', { name: 'Add rules', exact: true }).click();
         await playExpect(roleDialog).not.toBeVisible();
-        const ruleRow = details.getRuleRow('testing.kubernetes-iam.io');
+        const ruleRow = details.getRuleRowForRole(E2E_ROLE_NAME, 'testing.kubernetes-iam.io');
         await frameForCaption(ruleRow);
         await playExpect(ruleRow, 'The custom resource rule is added').toBeVisible({ timeout: 30_000 });
       });
@@ -885,7 +885,7 @@ test.describe.serial(`Extension usage`, { tag: '@integration' }, () => {
         await clusterRoleDialog.getByRole('radio', { name: 'View', exact: true }).check();
         await clusterRoleDialog.getByRole('button', { name: 'Add rules', exact: true }).click();
         await playExpect(clusterRoleDialog).not.toBeVisible();
-        const ruleRow = details.getRuleRow('core').filter({ hasText: 'nodes' });
+        const ruleRow = details.getRuleRowForRole(E2E_CLUSTER_ROLE_NAME, 'core').filter({ hasText: 'nodes' });
         await frameForCaption(ruleRow);
         await playExpect(ruleRow, 'The node rule is added to the cluster-scoped role').toBeVisible({ timeout: 30_000 });
       });
