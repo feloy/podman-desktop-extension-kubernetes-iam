@@ -76,6 +76,16 @@ export function configureVideoCaptions(page: Page, testInfo: TestInfo): void {
   }
 }
 
+/** Center an outcome in the recording before its viewer-facing expectation. */
+export async function frameForCaption(locator: Locator): Promise<void> {
+  if (CAPTION_PACE_MS <= 0 || !isInsideRecordedStep()) return;
+  await locator.scrollIntoViewIfNeeded();
+  await locator.evaluate(element =>
+    element.scrollIntoView({ behavior: 'instant', block: 'center', inline: 'nearest' }),
+  );
+  await playwrightExpect(locator).toBeInViewport();
+}
+
 /**
  * Captions common UI interactions without requiring annotations in each test.
  * This remains recording-only: normal e2e runs do not change their timing or
@@ -167,17 +177,25 @@ async function controlLabel(locator: Locator): Promise<string> {
         .filter(Boolean)
         .join(' ');
       const associatedLabel =
-        element.closest('label')?.textContent ??
-        (element.id ? document.querySelector(`label[for="${element.id}"]`)?.textContent : undefined);
-      return (
-        element.getAttribute('aria-label') ??
-        labelledByText ??
-        associatedLabel ??
-        element.getAttribute('title') ??
-        element.getAttribute('name') ??
-        element.getAttribute('placeholder') ??
-        element.textContent
-      );
+        element.closest('label') ?? (element.id ? document.querySelector(`label[for="${element.id}"]`) : undefined);
+      // Dropdown options live inside a label, whose full text includes every option.
+      const labelText = Array.from(associatedLabel?.childNodes ?? [])
+        .filter(node => node.nodeType === Node.TEXT_NODE)
+        .map(node => node.textContent)
+        .join(' ');
+      const isButton = element.matches('button, [role="button"]');
+      return [
+        element.getAttribute('aria-label'),
+        labelledByText,
+        element.getAttribute('title'),
+        element.id && associatedLabel?.getAttribute('for') === element.id ? labelText : undefined,
+        isButton ? element.textContent : undefined,
+        labelText,
+        isButton ? undefined : associatedLabel?.textContent,
+        element.getAttribute('placeholder'),
+        element.getAttribute('name'),
+        element.textContent,
+      ].find(value => value?.trim());
     });
     const normalized = label?.replaceAll(/\s+/g, ' ').trim();
     if (normalized) {
