@@ -19,6 +19,7 @@ name: pr-check
 
 permissions:
   contents: read
+  packages: read
 
 on: [pull_request]
 
@@ -47,9 +48,13 @@ jobs:
         with:
           node-version: 24
           cache: 'pnpm'
+          registry-url: 'https://npm.pkg.github.com'
+          scope: '@feloy'
 
       - name: Execute pnpm
         run: pnpm install --frozen-lockfile
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Run build:rpc
         run: pnpm build:rpc

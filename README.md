@@ -42,10 +42,25 @@ Install the extension in Podman Desktop using one of the following OCI images:
 
 ### Build
 
+The E2E workspace uses [`@feloy/video-captions`](https://github.com/feloy/video-captions/pkgs/npm/video-captions)
+from GitHub Packages. Before installing dependencies, set `NODE_AUTH_TOKEN` to a
+GitHub personal access token (classic) with `read:packages` access.
+
 ```bash
-pnpm install
+env "pnpm_config_//npm.pkg.github.com/:_authToken=$NODE_AUTH_TOKEN" pnpm install
 pnpm build
 ```
+
+Alternatively, add `//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}` to your
+user-level `~/.npmrc` and run `pnpm install` normally. See
+[pnpm's authentication documentation](https://pnpm.io/npmrc#environment-variables-in-auth-settings).
+
+CI uses `GITHUB_TOKEN` with `packages: read`. Grant this repository access under
+the package's **Manage Actions access** settings if required. Container builds
+exclude the E2E workspace and do not need the package token.
+
+For caption APIs and authoring examples, see the
+[video-captions README](https://github.com/feloy/video-captions#readme).
 
 ### Test
 

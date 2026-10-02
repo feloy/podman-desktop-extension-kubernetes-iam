@@ -1,1 +1,3 @@
 **/node_modules/**
+# E2E dependencies are only needed by the test jobs, not the extension image.
+tests/playwright/

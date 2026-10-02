@@ -28,12 +28,11 @@ const reporter: ReporterDescription[] = [
 
 if (process.env.VIDEO_SUBTITLES === 'true') {
   reporter.push([
-    './src/video-captions/reporter.ts',
+    'video-captions/reporter',
     {
       outputFile: './recordings/kubernetes-iam-e2e.ass',
       chapterFile: './recordings/kubernetes-iam-e2e.ffmetadata',
       testTitleDurationMs: 3_000,
-      assertionDurationMs: 2_000,
     },
   ]);
 }

@@ -338,6 +338,9 @@ importers:
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
+      video-captions:
+        specifier: npm:@feloy/video-captions@0.1.0
+        version: '@feloy/video-captions@0.1.0(@playwright/test@1.63.0)'
       xvfb-maybe:
         specifier: ^0.2.1
         version: 0.2.1(supports-color@10.2.2)
@@ -507,6 +510,12 @@ packages:
     peerDependenciesMeta:
       '@noble/hashes':
         optional: true
+
+  '@feloy/video-captions@0.1.0':
+    resolution: {integrity: sha512-wfxwTZQ/6PrphuonI0gxQRIH74rSbbgVmnq/Dsme7gtn4lXMj4Rp1M96tSmSkssr9SlEax9gtCTw3SMjElJtFQ==, tarball: https://npm.pkg.github.com/download/@feloy/video-captions/0.1.0/c30687b75e5b1fdc83bc05f1686d2da8589ac682}
+    engines: {node: '>=20'}
+    peerDependencies:
+      '@playwright/test': '>=1.63.0 <2'
 
   '@floating-ui/core@1.8.0':
     resolution: {integrity: sha512-0CIZ5itps/8x7BG8dEIhs53BvCUH2PCoogtakwRTut+Arm58sJooJ0AuZhLw2HJYIR5cMLNPBSS728sPho2khQ==}
@@ -3742,6 +3751,10 @@ snapshots:
       levn: 0.4.1
 
   '@exodus/bytes@1.15.1': {}
+
+  '@feloy/video-captions@0.1.0(@playwright/test@1.63.0)':
+    dependencies:
+      '@playwright/test': 1.63.0
 
   '@floating-ui/core@1.8.0':
     dependencies:

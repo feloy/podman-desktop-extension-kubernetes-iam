@@ -23,13 +23,21 @@ import { fileURLToPath } from 'node:url';
 
 import type { Page } from '@playwright/test';
 import type { ExtensionsPage } from '@podman-desktop/tests-playwright';
-import { PreferencesPage, RunnerOptions, StatusBar } from '@podman-desktop/tests-playwright';
+import {
+  expect as baseExpect,
+  PreferencesPage,
+  RunnerOptions,
+  StatusBar,
+  test as baseTest,
+} from '@podman-desktop/tests-playwright';
+import { configureVideoCaptions, createVideoCaptionTest, frameForCaption } from 'video-captions';
 
 import { KubernetesIamDetailsPage } from './model/pages/iam-details-page';
 import type { UserDetailsPage } from './model/pages/user-details-page';
 import { UsersPage } from './model/pages/users-page';
-import { configureVideoCaptions, expect as playExpect, frameForCaption, test } from './video-captions/runtime';
 import { handleWebview } from './utils/webviewHandler';
+
+const { test, expect: playExpect } = createVideoCaptionTest(baseTest, baseExpect);
 
 const DASHBOARD_OCI_IMAGE =
   process.env.DASHBOARD_OCI_IMAGE ??

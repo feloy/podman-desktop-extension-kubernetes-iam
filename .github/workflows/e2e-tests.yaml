@@ -21,6 +21,7 @@ on: [pull_request]
 
 permissions:
   contents: read
+  packages: read
 
 jobs:
   # Dedicated step to build the IAM extension image and extract the dashboard extension
@@ -109,10 +110,14 @@ jobs:
         with:
           node-version: 24.15.0
           cache: 'pnpm'
+          registry-url: 'https://npm.pkg.github.com'
+          scope: '@feloy'
 
       # Install npm packages for extension
       - name: Execute pnpm in Extension
         run: pnpm install
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       # Install the extensions (IAM + Dashboard)
       - name: Download Extension Plugins

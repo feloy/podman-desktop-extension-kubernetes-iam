@@ -23,7 +23,10 @@ RUN npm i -g corepack@0.31.0 && corepack enable
 
 COPY --chown=1001:1001 . .
 
+# Prune excluded E2E entries before verifying and installing the build
+# dependencies. pnpm otherwise verifies even unused GitHub Packages entries.
 RUN corepack install && \
+    pnpm install --lockfile-only --ignore-scripts --no-frozen-lockfile --trust-lockfile && \
     pnpm install --frozen-lockfile && \
     pnpm build
 
