@@ -550,7 +550,7 @@ export class IamManager implements IamApi {
     subjects: SubjectInfo[],
   ): Promise<void> {
     if (subjects.length === 0) {
-      await this.getApi().deleteResource(bindingKind, name, namespace);
+      await this.getApi().deleteResource(`${RBAC_API_GROUP}/v1`, bindingKind, name, namespace);
       return;
     }
     // The subjects are patched as a whole, the remaining ones replacing the list, which is
@@ -570,7 +570,7 @@ export class IamManager implements IamApi {
   private async deleteRoleOfRef(roleRef: RoleRefInfo, namespace: string | undefined): Promise<void> {
     // A Role lives in the namespace of the binding that referenced it, a ClusterRole in none.
     const roleNamespace = roleRef.kind === 'ClusterRole' ? undefined : namespace;
-    await this.getApi().deleteResource(roleRef.kind, roleRef.name, roleNamespace);
+    await this.getApi().deleteResource(`${RBAC_API_GROUP}/v1`, roleRef.kind, roleRef.name, roleNamespace);
   }
 
   async addRulesToRole(request: AddRoleRulesRequest): Promise<void> {

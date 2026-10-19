@@ -921,7 +921,12 @@ test('revokeRoleFromUser deletes the binding when the user is its only subject',
   });
 
   expect(telemetryLoggerMock.logUsage).toHaveBeenCalledWith('revokeRoleFromUser');
-  expect(mockApi.deleteResource).toHaveBeenCalledExactlyOnceWith('RoleBinding', 'binding1', 'default');
+  expect(mockApi.deleteResource).toHaveBeenCalledExactlyOnceWith(
+    'rbac.authorization.k8s.io/v1',
+    'RoleBinding',
+    'binding1',
+    'default',
+  );
   expect(mockApi.patchResources).not.toHaveBeenCalled();
 });
 
@@ -935,7 +940,12 @@ test('revokeRoleFromUser deletes a cluster role binding whose only subject is th
     bindingName: 'cluster-binding1',
   });
 
-  expect(mockApi.deleteResource).toHaveBeenCalledExactlyOnceWith('ClusterRoleBinding', 'cluster-binding1', undefined);
+  expect(mockApi.deleteResource).toHaveBeenCalledExactlyOnceWith(
+    'rbac.authorization.k8s.io/v1',
+    'ClusterRoleBinding',
+    'cluster-binding1',
+    undefined,
+  );
 });
 
 test('revokeRoleFromUser only drops the subject of the user when the binding has others', async () => {
@@ -1075,7 +1085,12 @@ test('revokeRoleFromUser confirms even when the role the binding grants is unkno
   });
 
   expect(confirmationMessage()).toContain('(rule count unknown)');
-  expect(mockApi.deleteResource).toHaveBeenCalledExactlyOnceWith('RoleBinding', 'binding1', 'default');
+  expect(mockApi.deleteResource).toHaveBeenCalledExactlyOnceWith(
+    'rbac.authorization.k8s.io/v1',
+    'RoleBinding',
+    'binding1',
+    'default',
+  );
 });
 
 test('revokeRoleFromUser rejects a binding it does not know about', async () => {
@@ -1165,8 +1180,20 @@ test('revokeRoleFromUser deletes the role along with the binding on Delete', asy
     namespace: 'default',
   });
 
-  expect(mockApi.deleteResource).toHaveBeenNthCalledWith(1, 'RoleBinding', 'binding1', 'default');
-  expect(mockApi.deleteResource).toHaveBeenNthCalledWith(2, 'Role', 'pod-reader', 'default');
+  expect(mockApi.deleteResource).toHaveBeenNthCalledWith(
+    1,
+    'rbac.authorization.k8s.io/v1',
+    'RoleBinding',
+    'binding1',
+    'default',
+  );
+  expect(mockApi.deleteResource).toHaveBeenNthCalledWith(
+    2,
+    'rbac.authorization.k8s.io/v1',
+    'Role',
+    'pod-reader',
+    'default',
+  );
 });
 
 test('revokeRoleFromUser deletes a cluster role without a namespace on Delete', async () => {
@@ -1179,8 +1206,20 @@ test('revokeRoleFromUser deletes a cluster role without a namespace on Delete', 
     bindingName: 'cluster-binding1',
   });
 
-  expect(mockApi.deleteResource).toHaveBeenNthCalledWith(1, 'ClusterRoleBinding', 'cluster-binding1', undefined);
-  expect(mockApi.deleteResource).toHaveBeenNthCalledWith(2, 'ClusterRole', 'node-reader', undefined);
+  expect(mockApi.deleteResource).toHaveBeenNthCalledWith(
+    1,
+    'rbac.authorization.k8s.io/v1',
+    'ClusterRoleBinding',
+    'cluster-binding1',
+    undefined,
+  );
+  expect(mockApi.deleteResource).toHaveBeenNthCalledWith(
+    2,
+    'rbac.authorization.k8s.io/v1',
+    'ClusterRole',
+    'node-reader',
+    undefined,
+  );
 });
 
 test('revokeRoleFromUser leaves the role in place on Revoke', async () => {
@@ -1194,7 +1233,12 @@ test('revokeRoleFromUser leaves the role in place on Revoke', async () => {
     namespace: 'default',
   });
 
-  expect(mockApi.deleteResource).toHaveBeenCalledExactlyOnceWith('RoleBinding', 'binding1', 'default');
+  expect(mockApi.deleteResource).toHaveBeenCalledExactlyOnceWith(
+    'rbac.authorization.k8s.io/v1',
+    'RoleBinding',
+    'binding1',
+    'default',
+  );
 });
 
 test('revokeRoleFromUser does not offer to delete a role another binding still grants', async () => {

@@ -32,7 +32,6 @@ allowBuilds:
   esbuild: true
   svelte-preprocess: true
   unrs-resolver: true
-patchedDependencies:
-  '@podman-desktop/kubernetes-dashboard-extension-api@0.5.0': patches/@podman-desktop__kubernetes-dashboard-extension-api@0.5.0.patch
 minimumReleaseAgeExclude:
+  - '@podman-desktop/kubernetes-dashboard-extension-api@0.7.0-next.202610191230-d9295cb'
   - '@feloy/video-captions@0.1.0'

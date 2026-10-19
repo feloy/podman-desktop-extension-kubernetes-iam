@@ -246,7 +246,7 @@ spec:
 
   private async deleteK8sCsr(api: KubernetesDashboardExtensionApi, csrName: string): Promise<void> {
     try {
-      await api.deleteResource('CertificateSigningRequest', csrName);
+      await api.deleteResource('certificates.k8s.io/v1', 'CertificateSigningRequest', csrName);
     } catch {
       // non-fatal: best-effort cleanup
     }
