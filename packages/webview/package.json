@@ -28,7 +28,7 @@
     "@kubernetes-iam/channels": "workspace:*",
     "@kubernetes-iam/rpc": "workspace:*",
     "@podman-desktop/ui-svelte": "1.30.5",
-    "@podman-desktop/webview-api": "1.29.1",
+    "@podman-desktop/webview-api": "1.30.5",
     "@sveltejs/vite-plugin-svelte": "^7",
     "@tailwindcss/typography": "^0.5.20",
     "@tailwindcss/vite": "^4.3.3",
