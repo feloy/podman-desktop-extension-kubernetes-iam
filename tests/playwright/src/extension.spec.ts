@@ -40,8 +40,7 @@ import { handleWebview } from './utils/webviewHandler';
 const { test, expect: playExpect } = createVideoCaptionTest(baseTest, baseExpect);
 
 const DASHBOARD_OCI_IMAGE =
-  process.env.DASHBOARD_OCI_IMAGE ??
-  'ghcr.io/podman-desktop/podman-desktop-extension-kubernetes-dashboard/pr:c353a4c5ae4e4a94f2a4197e4689eb7f3c0c6008';
+  process.env.DASHBOARD_OCI_IMAGE ?? 'ghcr.io/podman-desktop/podman-desktop-extension-kubernetes-dashboard:next';
 const IAM_OCI_IMAGE = process.env.EXTENSION_OCI_IMAGE ?? 'ghcr.io/feloy/podman-desktop-extension-kubernetes-iam:latest';
 const EXTENSION_PREINSTALLED: boolean = process.env.EXTENSION_PREINSTALLED === 'true';
 const DASHBOARD_EXTENSION_LABEL: string = 'podman-desktop.kubernetes-dashboard';

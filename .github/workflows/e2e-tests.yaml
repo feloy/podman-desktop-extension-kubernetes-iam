@@ -44,7 +44,7 @@ jobs:
           podman rmi -f localhost/local_iam_image:latest
 
           # Dashboard extension (prebuilt image required by IAM)
-          DASHBOARD_IMAGE=ghcr.io/podman-desktop/podman-desktop-extension-kubernetes-dashboard/pr:c353a4c5ae4e4a94f2a4197e4689eb7f3c0c6008
+          DASHBOARD_IMAGE=ghcr.io/podman-desktop/podman-desktop-extension-kubernetes-dashboard:next
           podman pull "$DASHBOARD_IMAGE"
           DASHBOARD_CONTAINER_ID=$(podman create "$DASHBOARD_IMAGE" --entrypoint "")
           podman export "$DASHBOARD_CONTAINER_ID" | tar -x -C output/plugins/
