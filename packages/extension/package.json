@@ -39,7 +39,7 @@
   "devDependencies": {
     "@kubernetes-iam/rpc": "workspace:*",
     "@kubernetes-iam/channels": "workspace:*",
-    "@podman-desktop/api": "1.29.1",
+    "@podman-desktop/api": "1.30.5",
     "@podman-desktop/kubernetes-dashboard-extension-api": "0.7.0-next.202610191230-d9295cb",
     "@types/node": "^24",
     "@typescript-eslint/eslint-plugin": "^8.71.2",
