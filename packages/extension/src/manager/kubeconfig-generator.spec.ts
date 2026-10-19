@@ -175,6 +175,7 @@ clusters:
     );
 
     expect(mockApi.deleteResource).toHaveBeenCalledWith(
+      'certificates.k8s.io/v1',
       'CertificateSigningRequest',
       expect.stringContaining('iam-alice-'),
     );
@@ -196,6 +197,7 @@ clusters:
     await expect(generator.generate('bob')).rejects.toThrow('approval denied');
 
     expect(mockApi.deleteResource).toHaveBeenCalledWith(
+      'certificates.k8s.io/v1',
       'CertificateSigningRequest',
       expect.stringContaining('iam-bob-'),
     );
