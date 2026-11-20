@@ -167,8 +167,8 @@ importers:
         specifier: workspace:*
         version: link:../rpc
       '@podman-desktop/api':
-        specifier: 1.30.5
-        version: 1.30.5
+        specifier: 1.30.7
+        version: 1.30.7
       '@podman-desktop/kubernetes-dashboard-extension-api':
         specifier: 0.7.0-next.202611061041-989d4fd
         version: 0.7.0-next.202611061041-989d4fd
@@ -604,8 +604,8 @@ packages:
     engines: {node: '>=20'}
     hasBin: true
 
-  '@podman-desktop/api@1.30.5':
-    resolution: {integrity: sha512-diE/1A2XRLjBzGnfMBRikxDeuNEEOyE/NlRODDoiBH85tlEs8+CspjEkmoaam7pzS82ej36iV1WhAd07ixU4Rw==}
+  '@podman-desktop/api@1.30.7':
+    resolution: {integrity: sha512-QoHZ+dTKc8xQwc/45GJs/FUzuXApby0KJGpihqt+br7GDHAqpwJp1sTjZrhUZ8v1pkWBrDdutKASEbRZLvUMqQ==}
 
   '@podman-desktop/kubernetes-dashboard-extension-api@0.7.0-next.202611061041-989d4fd':
     resolution: {integrity: sha512-vPMlHXXeHr+lcgnI6eesthXkBa9WmQYq1IvX1c9WSVsI0OqdnLHawRdgxR3DczrpBrkxaMGzD3yAgD/GQR3ZXA==}
@@ -3805,7 +3805,7 @@ snapshots:
     dependencies:
       playwright: 1.65.0
 
-  '@podman-desktop/api@1.30.5': {}
+  '@podman-desktop/api@1.30.7': {}
 
   '@podman-desktop/kubernetes-dashboard-extension-api@0.7.0-next.202611061041-989d4fd': {}
 
